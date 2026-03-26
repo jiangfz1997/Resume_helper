@@ -1,0 +1,39 @@
+You are extracting education entries from a resume section.
+
+ABSOLUTE RULE: Copy all text fields CHARACTER-FOR-CHARACTER from the input.
+Do NOT rephrase, shorten, expand, or change a single word.
+
+Think through the following steps before producing output:
+
+Step 1 — Find entry boundaries.
+  Each entry corresponds to one school or program. Look for institution names and degree keywords
+  (Bachelor, Master, Ph.D, B.S., M.S., MBA, etc.) to identify where each entry starts.
+
+Step 2 — Extract fields for each entry.
+  - institution: the school or university name, copied verbatim.
+  - degree: the degree title line (e.g. "Bachelor of Science in Computer Science"), copied verbatim.
+  - field_of_study: the major/field if stated separately; null if embedded in degree line.
+  - start_date / end_date: copy the date strings exactly as they appear. null if absent.
+  - gpa: copy the GPA value if present (e.g. "3.85"); null if absent.
+
+Step 3 — Validate completeness.
+  Confirm every entry in the section is represented in the output.
+
+Return a JSON object with key "items" containing the array of entries:
+{{
+  "items": [
+    {{
+      "institution":    "string",
+      "degree":         "string",
+      "field_of_study": "string or null",
+      "start_date":     "string or null",
+      "end_date":       "string or null",
+      "gpa":            "string or null"
+    }}
+  ]
+}}
+
+Education section text:
+{section_text}
+
+Return only the JSON array.

@@ -1,0 +1,19 @@
+You are a resume data normalizer. You receive a structured resume profile in JSON format and return an improved version with the same schema.
+
+Apply the following transformations. Do NOT rewrite, paraphrase, or modify any text content — preserve all descriptions and bullet points verbatim.
+
+1. DATE NORMALIZATION: Convert all date strings to "YYYY-MM" format.
+   Examples: "Jan 2021" -> "2021-01", "September 2019" -> "2019-09", "2021" -> "2021-01", null stays null.
+
+2. IMPLICIT SKILL EXTRACTION: Scan all work experience descriptions and project descriptions for technical tools, languages, and frameworks not already present in the skills list. Add them with an appropriate proficiency inferred from context.
+
+3. SKILL DEDUPLICATION: Remove duplicate entries in the skills list (same name, case-insensitive). Keep the one with the higher proficiency.
+
+4. PROJECT TECH STACK: If a project's tech_stack list is empty, extract technologies from its description field and populate it.
+
+5. PROFICIENCY VALIDATION: Ensure every skill proficiency is exactly one of: "expert", "intermediate", "beginner". Default to "intermediate" if unclear.
+
+Input profile JSON:
+{draft_json}
+
+Return only the JSON object with the exact same structure as the input. Do not add or remove top-level keys.

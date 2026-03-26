@@ -1,0 +1,43 @@
+You are extracting work experience entries from a resume section.
+
+ABSOLUTE RULE: Copy all description bullets CHARACTER-FOR-CHARACTER from the input.
+Do NOT rephrase, shorten, expand, or change a single word.
+
+Think through the following steps before producing output:
+
+Step 1 — Find entry boundaries.
+  Scan the text for lines that look like job titles or company names paired with a date range
+  (e.g. "Jan 2022 – Present"). Each such group marks the start of a new entry.
+
+Step 2 — Identify header vs bullet lines.
+  Header lines: title, company name, date range, location.
+  Bullet lines: responsibility or achievement sentences (often start with a verb or "•").
+
+Step 3 — Extract header fields.
+  - title: the job title line.
+  - company: the employer name.
+  - start_date / end_date: copy the date strings exactly as they appear.
+    Use null for end_date if the role is current ("Present" / "Current" / "Now").
+  - If title and company appear on the same line separated by "|" or "@", split them.
+
+Step 4 — Copy bullets verbatim.
+  For each bullet line, copy the FULL text exactly as written into the "description" array.
+  Do not omit any bullet. Do not merge or split bullets.
+
+Return a JSON object with key "items" containing the array of entries:
+{{
+  "items": [
+    {{
+      "company":     "string",
+      "title":       "string",
+      "start_date":  "string",
+      "end_date":    "string or null",
+      "description": ["exact bullet text", "exact bullet text"]
+    }}
+  ]
+}}
+
+Work experience section text:
+{section_text}
+
+Return only the JSON array.

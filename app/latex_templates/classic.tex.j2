@@ -1,0 +1,117 @@
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+\newcommand{\resumeItem}[1]{\item\small{#1 \vspace{-2pt}}}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+  \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+\begin{document}
+
+%---------- SUMMARY ----------
+\section{Summary}
+\small{<< summary | e >>}
+
+%---------- EXPERIENCE ----------
+<% if experiences %>
+\section{Experience}
+\resumeSubHeadingListStart
+<% for exp in experiences %>
+  \resumeSubheading
+    {<< exp.company | e >>}{<< exp.start_date | e >> -- << exp.end_date if exp.end_date else 'Present' >>}
+    {<< exp.title | e >>}{<< exp.location | e >>}
+  <% if exp.bullets %>
+  \resumeItemListStart
+  <% for bullet in exp.bullets %>
+    \resumeItem{<< bullet.text | e >>}
+  <% endfor %>
+  \resumeItemListEnd
+  <% endif %>
+<% endfor %>
+\resumeSubHeadingListEnd
+<% endif %>
+
+%---------- EDUCATION ----------
+<% if education %>
+\section{Education}
+\resumeSubHeadingListStart
+<% for edu in education %>
+  \resumeSubheading
+    {<< edu.institution | e >>}{<< edu.start_date | e >> -- << edu.end_date if edu.end_date else 'Present' >>}
+    {<< edu.degree | e >>, << edu.field_of_study | e >>}{<% if edu.gpa %>GPA: << edu.gpa | e >><% endif %>}
+<% endfor %>
+\resumeSubHeadingListEnd
+<% endif %>
+
+%---------- PROJECTS ----------
+<% if projects %>
+\section{Projects}
+\resumeSubHeadingListStart
+<% for proj in projects %>
+  \resumeProjectHeading
+    {\textbf{<< proj.name | e >>}<% if proj.tech_stack %> $|$ \emph{\small{<< proj.tech_stack | join(', ') | e >>}}<% endif %>}{}
+  \resumeItemListStart
+  <% if proj.bullets %>
+    <% for bullet in proj.bullets %>
+      \resumeItem{<< bullet.text | e >>}
+    <% endfor %>
+  <% else %>
+    \resumeItem{<< proj.description | e >>}
+  <% endif %>
+  \resumeItemListEnd
+<% endfor %>
+\resumeSubHeadingListEnd
+<% endif %>
+
+%---------- SKILLS ----------
+<% if skills %>
+\section{Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+  \small{\item{
+  <% for skill in skills %>
+    \textbf{<< skill.category | e >>}{: << skill.name | e >>} \\
+  <% endfor %>
+  }}
+\end{itemize}
+<% endif %>
+
+\end{document}

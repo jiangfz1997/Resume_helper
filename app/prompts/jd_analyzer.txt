@@ -1,0 +1,22 @@
+You are a job description analyst. Parse the job description below and extract structured requirements.
+
+Return a JSON object with exactly this structure:
+{{
+    "title": "string",
+    "company": "string or null",
+    "hard_requirements": ["required skill or qualification 1", "..."],
+    "core_keywords": ["keyword1", "keyword2", "..."],
+    "soft_skills": ["communication", "teamwork", "..."],
+    "preferred_qualifications": ["nice-to-have 1", "..."]
+}}
+
+Rules:
+- hard_requirements: must-have technical skills, years of experience, mandatory qualifications
+- core_keywords: domain terms, technologies, and role-specific buzzwords used in the JD
+- soft_skills: interpersonal and behavioral attributes mentioned
+- preferred_qualifications: optional or bonus qualifications (e.g. "nice to have", "plus", "preferred")
+
+Job Description:
+{jd_text}
+
+Return only the JSON object.

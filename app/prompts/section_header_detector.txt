@@ -1,0 +1,22 @@
+You are analyzing a resume. Each non-empty line is prefixed with its index: "[N] text".
+
+Identify the line index of each major section header (e.g. "EXPERIENCE", "EDUCATION", "PROJECTS", "SKILLS", "SUMMARY").
+
+Return JSON with exactly these keys. Use null if a section is absent.
+{{
+    "summary":    integer or null,
+    "experience": integer or null,
+    "education":  integer or null,
+    "projects":   integer or null,
+    "skills":     integer or null
+}}
+
+Rules:
+- Return the index of the header line itself, not the first content line.
+- Section headers are typically short all-caps or title-case lines with no descriptive content.
+- Do NOT return any text from the resume — integers and null only.
+
+Numbered resume:
+{text}
+
+Return only the JSON object.

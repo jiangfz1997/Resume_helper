@@ -1,0 +1,72 @@
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# ── Virtual environments ──────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Environment / secrets ─────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Claude Code ───────────────────────────────────────────
+.claude/
+CLAUDE.md
+
+# ── Frontend (Vue / Node) ─────────────────────────────────
+frontend/node_modules/
+frontend-vue/node_modules/
+frontend/dist/
+frontend-vue/dist/
+frontend/.vite/
+frontend-vue/.vite/
+frontend-vue/.env
+frontend-vue/.env.*
+!frontend-vue/.env.example
+
+# ── IDE / editors ─────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── LangGraph / LangSmith ─────────────────────────────────
+.langgraph_api/
+
+# ── Database ──────────────────────────────────────────────
+*.sqlite3
+*.db
+
+# ── Docker volumes ────────────────────────────────────────
+pgdata/
+
+# ── Misc artefacts ────────────────────────────────────────
+=0.11.0
+*.log
+*.tmp
+*.bak
+
+

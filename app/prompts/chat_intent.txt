@@ -1,0 +1,17 @@
+Classify the intent of a user message in a resume editing session.
+
+Return a JSON object with exactly this structure:
+{{"intent": "local_patch" | "global_feedback" | "question"}}
+
+Definitions:
+- local_patch: The user wants to change a specific section or field of the resume.
+  Examples: "this bullet doesn't match my experience", "rewrite this more concisely", "I didn't work on Kubernetes"
+- global_feedback: The user has a concern about the overall resume (tone, format, length, general quality).
+  Examples: "the whole thing sounds too junior", "there are too many bullets", "the format looks off"
+- question: The user is asking about something without requesting a change.
+  Examples: "why did you include this?", "what does highlighted mean?", "can you explain the summary?"
+
+Scope context (if any): {scope_context}
+User message: {message}
+
+Return only the JSON object.

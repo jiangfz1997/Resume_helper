@@ -1,0 +1,38 @@
+You are extracting skills from a resume section.
+
+Think through the following steps before producing output:
+
+Step 1 — Identify the format.
+  Skills sections appear in several formats:
+  (a) "Category: skill1, skill2, skill3"
+  (b) Plain comma-separated list with no category
+  (c) One skill per line
+  Determine which format (or mix) is used.
+
+Step 2 — Extract category and skill name.
+  - If a category label is present (text before ":"), use it as-is.
+  - If no category is present, use "Technical Skills" as the default category.
+  - Copy skill names exactly as written.
+
+Step 3 — Assign proficiency.
+  Use these rules only when the resume provides explicit evidence:
+  - expert: 5+ years stated, or labeled senior / expert / advanced / lead.
+  - intermediate: 2–4 years stated, or labeled proficient / experienced / solid.
+  - beginner: under 2 years stated, or labeled familiar / basic / learning / exposure.
+  - Default to "intermediate" when no evidence is provided.
+
+Return a JSON object with key "items" (one object per individual skill, not per category):
+{{
+  "items": [
+    {{
+      "category":    "string",
+      "name":        "string",
+      "proficiency": "expert | intermediate | beginner"
+    }}
+  ]
+}}
+
+Skills section text:
+{section_text}
+
+Return only the JSON array.

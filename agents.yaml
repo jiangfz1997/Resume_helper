@@ -1,0 +1,72 @@
+# Model configuration for each agent.
+# Change the model/temperature here; no code changes required.
+#
+# format:
+#   json     - enforce JSON output (required for structured extraction agents)
+#   (omit)   - free-form text output (used for generation / streaming agents)
+#
+# num_predict: max output tokens (omit to use the model default)
+
+base_url: "http://localhost:11434"
+
+agents:
+  jd_analyzer:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+    format: json
+
+  skill_matcher:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+    format: json
+    num_predict: 2048
+
+  resume_auditor:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+    format: json
+
+  content_auditor:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+    format: json
+
+  resume_generator:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+
+  content_drafter:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+    num_predict: 4096
+
+  base_resume_builder:
+    model: qwen2.5-coder:14b
+    temperature: 0.2
+    format: json
+
+  resume_tailor:
+    model: qwen2.5-coder:14b
+    temperature: 0.2
+    format: json
+
+  # resume_chat_agent uses two model instances: one for JSON patch, one for streaming text
+  resume_chat_json:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+    format: json
+
+  resume_chat_stream:
+    model: qwen2.5-coder:14b
+    temperature: 0.3
+
+  # Two-phase resume PDF parser
+  section_detector:
+    model: qwen2.5-coder:14b
+    temperature: 0.0
+    format: json
+
+  section_parser:
+    model: qwen2.5-coder:14b
+    temperature: 0.0
+    format: json
