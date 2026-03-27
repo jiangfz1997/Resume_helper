@@ -10,14 +10,11 @@
           <n-button :loading="viewLoading" @click="fetchProfile">Refresh</n-button>
           <template v-if="profile">
             <n-divider />
-            <n-descriptions label-placement="left" bordered :column="1">
-              <n-descriptions-item label="Name">{{ profile.full_name }}</n-descriptions-item>
-              <n-descriptions-item label="Summary">{{ profile.summary ?? '—' }}</n-descriptions-item>
-              <n-descriptions-item label="Skills">{{ profile.skills.length }}</n-descriptions-item>
-              <n-descriptions-item label="Experiences">{{ profile.work_experiences.length }}</n-descriptions-item>
-              <n-descriptions-item label="Education">{{ profile.educations.length }}</n-descriptions-item>
-              <n-descriptions-item label="Projects">{{ profile.projects.length }}</n-descriptions-item>
-            </n-descriptions>
+            <div style="margin-bottom: 20px">
+              <n-text style="font-size: 22px; font-weight: 700; display: block">{{ profile.full_name }}</n-text>
+              <n-text v-if="profile.summary" depth="2" style="display: block; margin-top: 8px; line-height: 1.7; white-space: pre-wrap">{{ profile.summary }}</n-text>
+              <n-text v-else depth="3" style="display: block; margin-top: 8px; font-size: 12px; font-style: italic">No summary yet.</n-text>
+            </div>
 
             <template v-if="profile.work_experiences.length">
               <n-divider title-placement="left">Work Experience</n-divider>
@@ -204,7 +201,15 @@
 
       <!-- ── Edit ── -->
       <n-tab-pane name="edit" tab="Edit">
+        <div @mouseup="onEditMouseUp">
         <n-space vertical size="medium" style="margin-top: 12px">
+
+          <!-- Basic Info -->
+          <n-card title="Basic Info">
+            <n-form-item label="Full Name" label-placement="top" :show-feedback="false">
+              <n-input v-model:value="editData.full_name" placeholder="Your full name" />
+            </n-form-item>
+          </n-card>
 
           <!-- Summary -->
           <n-card title="Summary">
@@ -521,6 +526,7 @@
           <n-button type="primary" :loading="editLoading" @click="saveEdit">Save Profile</n-button>
 
         </n-space>
+        </div>
       </n-tab-pane>
 
       <!-- ── Base Resume ── -->
@@ -677,12 +683,22 @@
     </n-tabs>
   </div>
 
+  <button
+    v-if="selectionBtn"
+    ref="quoteButtonRef"
+    class="selection-quote-btn"
+    :style="{ left: selectionBtn.x + 'px', top: (selectionBtn.y - 38) + 'px' }"
+    @click="quoteSelection"
+  >
+    Quote
+  </button>
+
   <ProfileChatPanel ref="profileChatPanelRef" @patch="applyProfilePatch" />
 </template>
 
 <script setup lang="ts">
 import type { SelectOption, UploadFileInfo } from 'naive-ui'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 type IndexedSkill = Skill & { _idx: number }
 import {
@@ -692,6 +708,7 @@ import {
   replaceSkills,
   saveBaseResume,
   updateProfile as apiUpdateProfile,
+  updateUserMe,
   uploadResumePDF,
 } from '../api/client'
 import type { Education, MasterProfile, ParsedProfileDraft, ProficiencyLevel, Project, Skill, TailoredResumeDraft, WorkExperience } from '../api/client'
@@ -742,7 +759,10 @@ async function fetchProfile(): Promise<void> {
   }
 }
 
-onMounted(fetchProfile)
+onMounted(() => {
+  fetchProfile()
+  document.addEventListener('mousedown', onDocMouseDown)
+})
 
 // ── upload pdf ─────────────────────────────────────────────────
 type PdfStage = 'pick' | 'preview' | 'done'
@@ -803,6 +823,7 @@ function goToView(): void {
 
 // ── edit ───────────────────────────────────────────────────────
 interface EditData {
+  full_name: string
   summary: string
   work_experiences: WorkExperience[]
   educations: Education[]
@@ -811,6 +832,7 @@ interface EditData {
 }
 
 const editData = reactive<EditData>({
+  full_name: '',
   summary: '',
   work_experiences: [],
   educations: [],
@@ -825,6 +847,7 @@ const editSuccess = ref('')
 
 function populateEdit(): void {
   if (!profile.value) return
+  editData.full_name = profile.value.full_name
   editData.summary = profile.value.summary ?? ''
   editData.work_experiences = profile.value.work_experiences.map(e => ({
     ...e,
@@ -941,6 +964,9 @@ async function saveEdit(): Promise<void> {
   editSuccess.value = ''
   editLoading.value = true
   try {
+    if (editData.full_name.trim() && editData.full_name !== profile.value?.full_name) {
+      await updateUserMe(token(), { full_name: editData.full_name.trim() })
+    }
     await apiUpdateProfile(token(), {
       summary: editData.summary || undefined,
       work_experiences: editData.work_experiences.map(e => ({
@@ -1019,6 +1045,47 @@ async function runSaveBase(): Promise<void> {
     baseSaveLoading.value = false
   }
 }
+
+// ── text selection quote ────────────────────────────────────────
+interface SelectionBtn {
+  x: number
+  y: number
+  text: string
+}
+const selectionBtn = ref<SelectionBtn | null>(null)
+const quoteButtonRef = ref<HTMLElement | null>(null)
+
+function onEditMouseUp(e: MouseEvent): void {
+  const target = e.target as HTMLElement
+  if (!(target instanceof HTMLTextAreaElement)) return
+  const start = target.selectionStart ?? 0
+  const end = target.selectionEnd ?? 0
+  if (start === end) {
+    selectionBtn.value = null
+    return
+  }
+  const text = target.value.substring(start, end).trim()
+  if (!text) {
+    selectionBtn.value = null
+    return
+  }
+  selectionBtn.value = { x: e.clientX, y: e.clientY, text }
+}
+
+function quoteSelection(): void {
+  if (!selectionBtn.value) return
+  profileChatPanelRef.value?.openWithSelection(selectionBtn.value.text)
+  selectionBtn.value = null
+}
+
+function onDocMouseDown(e: MouseEvent): void {
+  if (quoteButtonRef.value && quoteButtonRef.value.contains(e.target as Node)) return
+  selectionBtn.value = null
+}
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onDocMouseDown)
+})
 
 // ── profile AI chat ─────────────────────────────────────────────
 const profileChatPanelRef = ref<InstanceType<typeof ProfileChatPanel> | null>(null)
@@ -1121,3 +1188,25 @@ function applyProfilePatch(path: string, updatedValue: unknown): void {
   }
 }
 </script>
+
+<style scoped>
+.selection-quote-btn {
+  position: fixed;
+  z-index: 2000;
+  background: #52c41a;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.selection-quote-btn:hover {
+  background: #389e0d;
+}
+</style>

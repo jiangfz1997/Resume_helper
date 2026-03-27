@@ -38,13 +38,13 @@
         </n-space>
 
         <n-space align="center" style="margin-bottom: 16px">
-          <n-text depth="3" style="width: 90px">Match Score</n-text>
+          <n-text depth="3" style="width: 120px">Match Score</n-text>
           <n-progress
             type="line"
             :percentage="matchPct"
             :color="matchPct >= 60 ? '#18a058' : '#f0a020'"
             :rail-color="'#333'"
-            style="width: 300px"
+            style="width: 280px"
           />
           <n-text :type="matchPct >= 60 ? 'success' : 'warning'" style="font-weight: 600">
             {{ matchPct }}%
@@ -242,6 +242,20 @@
           </n-space>
         </n-space>
         <n-alert v-if="renderError" type="error" style="margin-top: 12px">{{ renderError }}</n-alert>
+      </n-card>
+
+      <!-- Keyword coverage (after generation) -->
+      <n-card v-if="kwAfterPct > 0 || reqAfterPct > 0" title="Keyword Coverage" style="margin-bottom: 16px">
+        <n-space align="center" style="margin-bottom: 8px">
+          <n-text depth="3" style="width: 120px">Weighted Score</n-text>
+          <n-progress type="line" :percentage="kwAfterPct" :color="kwAfterPct >= 60 ? '#18a058' : '#f0a020'" :rail-color="'#333'" style="width: 280px" />
+          <n-text :type="kwAfterPct >= 60 ? 'success' : 'warning'" style="font-weight: 600">{{ kwAfterPct }}%</n-text>
+        </n-space>
+        <n-space align="center">
+          <n-text depth="3" style="width: 120px">Required Keywords</n-text>
+          <n-progress type="line" :percentage="reqAfterPct" :color="reqAfterPct >= 60 ? '#18a058' : '#d03050'" :rail-color="'#333'" style="width: 280px" />
+          <n-text :type="reqAfterPct >= 60 ? 'success' : 'error'" style="font-weight: 600">{{ reqAfterPct }}%</n-text>
+        </n-space>
       </n-card>
 
       <!-- Summary -->
@@ -622,6 +636,8 @@ async function loadSessionById(sid: string): Promise<void> {
     currentSessionId.value = sid
     if (detail.status === 'draft_ready' && detail.tailored_draft) {
       draft.value = detail.tailored_draft
+      kwAfterPct.value = Math.round(detail.keyword_coverage * 100)
+      reqAfterPct.value = Math.round(detail.required_coverage * 100)
       stage.value = 'result'
     } else if (detail.status === 'analyzed' || detail.status === 'generating') {
       const p: MatchingPreview = {
@@ -635,6 +651,8 @@ async function loadSessionById(sid: string): Promise<void> {
         all_experiences: detail.all_experiences,
         all_projects: detail.all_projects,
         relevance_notes: detail.relevance_notes,
+        keyword_coverage: detail.keyword_coverage,
+        required_coverage: detail.required_coverage,
       }
       preview.value = p
       initSelections(p)
@@ -669,6 +687,9 @@ const config = reactive<PipelineConfig>({
 })
 
 const matchPct = computed(() => preview.value ? Math.round(preview.value.match_score * 100) : 0)
+
+const kwAfterPct = ref(0)
+const reqAfterPct = ref(0)
 
 const highlightedSet = computed(() => {
   return new Set((preview.value?.highlighted_experiences ?? []).map(s => s.toLowerCase()))
@@ -728,6 +749,11 @@ async function runGenerate(): Promise<void> {
     draft.value = data
     stage.value = 'result'
     if (preview.value) currentSessionId.value = preview.value.session_id
+    try {
+      const detail = await getSession(token(), preview.value!.session_id)
+      kwAfterPct.value = Math.round(detail.keyword_coverage * 100)
+      reqAfterPct.value = Math.round(detail.required_coverage * 100)
+    } catch { /* non-critical */ }
   } catch (e) {
     generateError.value = (e as Error).message
   } finally {
@@ -836,6 +862,8 @@ function reset(): void {
   selectedTemplateId.value = null
   selectedTemplateSource.value = undefined
   pendingScope.value = null
+  kwAfterPct.value = 0
+  reqAfterPct.value = 0
 }
 </script>
 

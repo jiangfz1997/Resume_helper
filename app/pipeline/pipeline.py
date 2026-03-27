@@ -20,6 +20,7 @@ from app.models.data_models import (
     ResumeRequest,
     ResumeResponse,
 )
+from app.services.keyword_scorer import KeywordScorer
 from app.services.profile_manager import ProfileManager
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,9 @@ class ResumePipeline:
         total = len(report.matched_skills) + len(report.missing_skills)
         match_score = len(report.matched_skills) / total if total > 0 else 0.0
 
+        kw_result = KeywordScorer().score_profile(profile, jd)
+        req = kw_result.hard_requirements
+
         preview = MatchingPreview(
             session_id="",  # filled in by route after DB insert
             match_score=match_score,
@@ -229,6 +233,8 @@ class ResumePipeline:
             all_experiences=profile.work_experiences,
             all_projects=profile.projects,
             relevance_notes=report.relevance_notes,
+            keyword_coverage=kw_result.score,
+            required_coverage=round(req.matched / req.total, 4) if req.total else 0.0,
         )
         return AnalysisResult(preview=preview, profile=profile, jd=jd, matching_report=report)
 

@@ -107,6 +107,8 @@ export interface MatchingPreview {
   all_experiences: WorkExperience[]
   all_projects: Project[]
   relevance_notes: string
+  keyword_coverage: number
+  required_coverage: number
 }
 
 export interface ResumeResponse {
@@ -152,6 +154,10 @@ export interface TailoredResumeDraft {
 
 export function registerUser(data: UserCreate): Promise<UserRead> {
   return request('/auth/register', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateUserMe(token: string, data: { full_name?: string }): Promise<UserRead> {
+  return request('/users/me', { method: 'PUT', body: JSON.stringify(data) }, token)
 }
 
 export function loginUser(email: string, password: string): Promise<{ access_token: string; token_type: string }> {
@@ -259,6 +265,8 @@ export interface ResumeSessionDetail {
   relevance_notes: string
   status: ResumeSessionStatus
   tailored_draft?: TailoredResumeDraft
+  keyword_coverage: number
+  required_coverage: number
   created_at: string
   updated_at: string
 }

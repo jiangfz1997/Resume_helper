@@ -4,7 +4,7 @@ from typing import Optional, TypedDict
 from langgraph.graph import END, StateGraph
 
 from app.agents.content_drafter import OllamaContentDrafter
-from app.interfaces.base import IContentAuditor
+from app.interfaces.base import IContentAuditor, IDraftPostProcessor
 from app.models.data_models import (
     AuditFeedback,
     JobDescription,
@@ -14,6 +14,10 @@ from app.models.data_models import (
     PipelineStatus,
     TailoredResumeDraft,
 )
+
+
+def _coerce(value: object, model: type) -> object:
+    return model.model_validate(value) if isinstance(value, dict) else value
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,8 @@ def _v2_serialize(state: "_V2State") -> dict:
         "retry_count": 0,
         "current_threshold": state["config"].initial_threshold,
         "status": PipelineStatus.in_progress.value,
+        "initial_keyword_score": 0.0,
+        "final_keyword_score": 0.0,
     }
 
 
@@ -46,6 +52,8 @@ class _V2State(TypedDict):
     retry_count: int
     current_threshold: float
     status: PipelineStatus
+    initial_keyword_score: float
+    final_keyword_score: float
 
 
 class V2ResumePipeline:
@@ -53,9 +61,11 @@ class V2ResumePipeline:
         self,
         drafter: OllamaContentDrafter,
         auditor: IContentAuditor,
+        post_processors: list[IDraftPostProcessor] | None = None,
     ) -> None:
         self._drafter = drafter
         self._auditor = auditor
+        self._post_processors: list[IDraftPostProcessor] = post_processors or []
         self._graph = self._build_graph()
 
     def _build_graph(self) -> object:
@@ -72,23 +82,29 @@ class V2ResumePipeline:
             "v2:draft | iteration=%d feedback=%s",
             state["retry_count"], "yes" if state["feedback"] else "none",
         )
+        profile = _coerce(state["profile"], MasterProfile)
+        jd = _coerce(state["jd"], JobDescription)
+        matching_report = _coerce(state["matching_report"], MatchingReport)
+        feedback = _coerce(state["feedback"], AuditFeedback) if state["feedback"] else None
         draft = await self._drafter.draft(
-            profile=state["profile"],
-            jd=state["jd"],
-            matching_report=state["matching_report"],
-            feedback=state["feedback"],
+            profile=profile,
+            jd=jd,
+            matching_report=matching_report,
+            feedback=feedback,
             iteration=state["retry_count"],
         )
         logger.debug("v2:draft | done | experiences=%d", len(draft.experiences))
         return {"tailored_draft": draft}
 
     async def _audit_node(self, state: _V2State) -> dict:
-        cfg: PipelineConfig = state["config"]
+        cfg: PipelineConfig = _coerce(state["config"], PipelineConfig)
         logger.debug(
             "v2:audit | iteration=%d threshold=%.2f", state["retry_count"], state["current_threshold"]
         )
         feedback = await self._auditor.audit(
-            state["tailored_draft"], state["jd"], state["current_threshold"]
+            _coerce(state["tailored_draft"], TailoredResumeDraft),
+            _coerce(state["jd"], JobDescription),
+            state["current_threshold"],
         )
         logger.info(
             "v2:audit | score=%.2f approved=%s suggestions=%d",
@@ -102,6 +118,7 @@ class V2ResumePipeline:
             new_best_draft = state["tailored_draft"]
 
         new_retry = state["retry_count"] + 1
+        is_first = state["retry_count"] == 0
 
         if feedback.approved:
             new_status = PipelineStatus.approved
@@ -119,6 +136,8 @@ class V2ResumePipeline:
             "retry_count": new_retry,
             "current_threshold": new_threshold,
             "status": new_status,
+            "initial_keyword_score": feedback.keyword_match_score if is_first else state["initial_keyword_score"],
+            "final_keyword_score": feedback.keyword_match_score,
         }
 
     def _route(self, state: _V2State) -> str:
@@ -147,14 +166,30 @@ class V2ResumePipeline:
             "retry_count": 0,
             "current_threshold": config.initial_threshold,
             "status": PipelineStatus.in_progress,
+            "initial_keyword_score": 0.0,
+            "final_keyword_score": 0.0,
         }
 
         from app.pipeline._studio import _invoke
         final = await _invoke("v2_resume", self._graph, _v2_serialize(initial))
 
-        best: TailoredResumeDraft | None = final["best_tailored_draft"]
-        if best is None:
+        best_raw = final["best_tailored_draft"]
+        if best_raw is None:
             raise ValueError("V2 pipeline failed to produce a draft")
+
+        best: TailoredResumeDraft = (
+            TailoredResumeDraft.model_validate(best_raw) if isinstance(best_raw, dict) else best_raw
+        )
+
+        initial_kw = final.get("initial_keyword_score", 0.0)
+        final_kw = final.get("final_keyword_score", 0.0)
+        logger.info(
+            "v2:done | keyword_match initial=%.2f final=%.2f delta=%+.2f",
+            initial_kw, final_kw, final_kw - initial_kw,
+        )
+
+        for processor in self._post_processors:
+            best = processor.process(best)
 
         return best.model_copy(update={
             "template_id": template_id,

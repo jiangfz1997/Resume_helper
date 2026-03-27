@@ -135,3 +135,12 @@ class IUserTemplateRepository(ABC):
 
     @abstractmethod
     async def delete(self, template_id: uuid.UUID, user_id: uuid.UUID) -> bool: ...
+
+
+class IDraftPostProcessor(ABC):
+    """Synchronous, stateless transform applied to a TailoredResumeDraft after
+    the draft-audit loop completes.  Implementations are chained in sequence by
+    the pipeline; each receives the output of the previous step."""
+
+    @abstractmethod
+    def process(self, draft: TailoredResumeDraft) -> TailoredResumeDraft: ...

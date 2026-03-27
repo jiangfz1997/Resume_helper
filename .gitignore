@@ -70,4 +70,5 @@ pgdata/
 *.tmp
 *.bak
 
-
+tmp_doc/
+.watchfilesignore

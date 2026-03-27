@@ -17,6 +17,7 @@ from app.models.data_models import (
 )
 from app.models.db_models import ResumeSessionORM
 from app.repositories.session_repository import ResumeSessionRepository
+from app.services.keyword_scorer import KeywordScorer
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -48,8 +49,16 @@ def _to_detail(row: ResumeSessionORM) -> ResumeSessionDetail:
         matched, missing, all_exp, all_proj, highlighted, relevance = [], [], [], [], [], ""
 
     tailored_draft: TailoredResumeDraft | None = None
+    keyword_coverage = 0.0
+    required_coverage = 0.0
     if row.tailored_draft_json:
         tailored_draft = TailoredResumeDraft.model_validate(row.tailored_draft_json)
+        if row.jd_json:
+            jd = JobDescription.model_validate(row.jd_json)
+            kw = KeywordScorer().score(tailored_draft, jd)
+            req = kw.hard_requirements
+            keyword_coverage = kw.score
+            required_coverage = round(req.matched / req.total, 4) if req.total else 0.0
 
     return ResumeSessionDetail(
         id=str(row.id),
@@ -65,6 +74,8 @@ def _to_detail(row: ResumeSessionORM) -> ResumeSessionDetail:
         relevance_notes=relevance,
         status=ResumeSessionStatus(row.status),
         tailored_draft=tailored_draft,
+        keyword_coverage=keyword_coverage,
+        required_coverage=required_coverage,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

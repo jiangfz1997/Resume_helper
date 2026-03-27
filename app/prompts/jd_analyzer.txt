@@ -11,10 +11,10 @@ Return a JSON object with exactly this structure:
 }}
 
 Rules:
-- hard_requirements: must-have technical skills, years of experience, mandatory qualifications
-- core_keywords: domain terms, technologies, and role-specific buzzwords used in the JD
-- soft_skills: interpersonal and behavioral attributes mentioned
-- preferred_qualifications: optional or bonus qualifications (e.g. "nice to have", "plus", "preferred")
+- hard_requirements: extract as SHORT, ATOMIC keywords or technology names (e.g. "Python", "FastAPI", "PostgreSQL", "Docker"). Do NOT write full sentences or requirement descriptions. Each item must be a single technology, tool, language, or framework name that could appear verbatim in a resume.
+- core_keywords: domain terms, technologies, and role-specific buzzwords used in the JD — also short atomic terms
+- soft_skills: interpersonal and behavioral attributes mentioned (e.g. "communication", "teamwork")
+- preferred_qualifications: nice-to-have skills or tools, also as short atomic keywords (e.g. "LangChain", "Redis")
 
 Job Description:
 {jd_text}

@@ -155,6 +155,8 @@ class AuditFeedback(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     suggestions: list[str] = Field(default_factory=list)
     approved: bool
+    keyword_match_score: float = 0.0          # weighted composite
+    required_keyword_coverage: float = 0.0    # hard_requirements hit rate
 
 
 class DraftResume(BaseModel):
@@ -201,6 +203,8 @@ class MatchingPreview(BaseModel):
     all_experiences: list[WorkExperience]
     all_projects: list[Project]
     relevance_notes: str
+    keyword_coverage: float = 0.0       # weighted composite score vs JD (profile baseline)
+    required_coverage: float = 0.0      # hard_requirements hit rate (profile baseline)
 
 
 class GenerateConfirmRequest(BaseModel):
@@ -299,6 +303,8 @@ class ResumeSessionDetail(BaseModel):
     relevance_notes: str = ""
     status: ResumeSessionStatus
     tailored_draft: Optional["TailoredResumeDraft"] = None
+    keyword_coverage: float = 0.0       # weighted composite score vs JD (tailored draft)
+    required_coverage: float = 0.0      # hard_requirements hit rate (tailored draft)
     created_at: datetime
     updated_at: datetime
 

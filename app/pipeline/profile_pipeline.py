@@ -55,7 +55,9 @@ class ProfileParsePipeline:
         initial_state: _GraphState = {"raw_text": raw_text, "draft": None}
         from app.pipeline._studio import _invoke
         final_state = await _invoke("profile_parse", self._graph, initial_state)
-        draft: Optional[ParsedProfileDraft] = final_state["draft"]
-        if draft is None:
+        draft_raw = final_state["draft"]
+        if draft_raw is None:
             raise ValueError("Profile parsing pipeline failed to produce a result")
-        return draft
+        if isinstance(draft_raw, dict):
+            return ParsedProfileDraft.model_validate(draft_raw)
+        return draft_raw
