@@ -37,14 +37,15 @@
           >
             {{ s.status === 'draft_ready' ? 'View Draft' : 'Continue' }}
           </n-button>
-          <n-button
+          <!-- DEPRECATED: PDF download from session list disabled (format broken) -->
+          <!-- <n-button
             v-if="s.status === 'draft_ready'"
             size="small"
             @click="renderPdf(s)"
             :loading="renderingId === s.id"
           >
             PDF
-          </n-button>
+          </n-button> -->
           <n-button size="small" quaternary type="error" @click="confirmDelete(s)">Delete</n-button>
         </n-space>
       </div>

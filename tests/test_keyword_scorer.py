@@ -15,9 +15,8 @@ from app.services.keyword_scorer import KeywordScorer, _keyword_in_text
 def _make_jd(**kwargs) -> JobDescription:
     defaults = dict(
         title="Software Engineer",
-        hard_requirements=[],
-        core_keywords=[],
-        soft_skills=[],
+        qualifications=[],
+        tech_keywords=[],
         preferred_qualifications=[],
     )
     return JobDescription(**{**defaults, **kwargs})
@@ -75,31 +74,31 @@ class TestKeywordScorer:
         return KeywordScorer()
 
     def test_full_match_score_is_one(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(hard_requirements=["Python", "FastAPI"])
+        jd = _make_jd(tech_keywords=["Python", "FastAPI"])
         draft = _make_draft(summary="Built APIs with Python and FastAPI")
         result = scorer.score(draft, jd)
         assert result.score == 1.0
-        assert result.hard_requirements.matched == 2
-        assert result.hard_requirements.missing == []
+        assert result.tech_keywords.matched == 2
+        assert result.tech_keywords.missing == []
 
     def test_no_match_score_is_zero(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(hard_requirements=["Kubernetes", "Terraform"])
+        jd = _make_jd(tech_keywords=["Kubernetes", "Terraform"])
         draft = _make_draft(summary="Worked on web development with Python")
         result = scorer.score(draft, jd)
         assert result.score == 0.0
-        assert result.hard_requirements.matched == 0
+        assert result.tech_keywords.matched == 0
 
     def test_keyword_found_in_bullet(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(core_keywords=["microservices"])
+        jd = _make_jd(tech_keywords=["microservices"])
         draft = _make_draft(bullet_texts=["Designed microservices architecture"])
         result = scorer.score(draft, jd)
-        assert result.core_keywords.matched == 1
+        assert result.tech_keywords.matched == 1
 
     def test_keyword_found_in_skills(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(core_keywords=["Go"])
+        jd = _make_jd(tech_keywords=["Go"])
         draft = _make_draft(skill_names=["Go"])
         result = scorer.score(draft, jd)
-        assert result.core_keywords.matched == 1
+        assert result.tech_keywords.matched == 1
 
     def test_empty_jd_score_is_zero(self, scorer: KeywordScorer) -> None:
         draft = _make_draft(summary="Experienced engineer")
@@ -107,49 +106,46 @@ class TestKeywordScorer:
         assert result.score == 0.0
 
     def test_required_missing_weighs_more_than_preferred(self, scorer: KeywordScorer) -> None:
-        # Draft hits preferred but not required — score should be low
         jd = _make_jd(
-            hard_requirements=["Kubernetes"],      # weight 1.0, missed
-            preferred_qualifications=["Docker"],   # weight 0.5, hit
+            tech_keywords=["Kubernetes"],        # weight 0.8, missed
+            preferred_qualifications=["Docker"], # weight 0.5, hit
         )
         draft = _make_draft(summary="Experience with Docker")
         result = scorer.score(draft, jd)
-        # weighted: (1.0 * 0/1 + 0.5 * 1/1) / (1.0 + 0.5) = 0.5/1.5 ≈ 0.333
+        # weighted: (0.8 * 0/1 + 0.5 * 1/1) / (0.8 + 0.5) = 0.5/1.3 ≈ 0.385
         assert result.score < 0.4
-        assert result.hard_requirements.matched == 0
+        assert result.tech_keywords.matched == 0
         assert result.preferred_qualifications.matched == 1
 
     def test_required_fully_covered_boosts_score(self, scorer: KeywordScorer) -> None:
-        # Draft hits required but not preferred — score should still be high
         jd = _make_jd(
-            hard_requirements=["Kubernetes"],      # weight 1.0, hit
-            preferred_qualifications=["Terraform"],  # weight 0.5, missed
+            tech_keywords=["Kubernetes"],          # weight 0.8, hit
+            preferred_qualifications=["Terraform"],# weight 0.5, missed
         )
         draft = _make_draft(summary="Experience with Kubernetes")
         result = scorer.score(draft, jd)
-        # weighted: (1.0 * 1/1 + 0.5 * 0/1) / (1.0 + 0.5) = 1.0/1.5 ≈ 0.667
+        # weighted: (0.8 * 1/1 + 0.5 * 0/1) / (0.8 + 0.5) = 0.8/1.3 ≈ 0.615
         assert result.score > 0.6
-        assert result.hard_requirements.matched == 1
+        assert result.tech_keywords.matched == 1
 
     def test_missing_keywords_flat_list(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(hard_requirements=["Python", "AWS"])
+        jd = _make_jd(tech_keywords=["Python", "AWS"])
         draft = _make_draft(summary="Experienced Python developer")
         result = scorer.score(draft, jd)
         assert "AWS" in result.missing_keywords
         assert "Python" in result.matched_keywords
 
     def test_deduplication_across_same_category(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(hard_requirements=["Python", "python", "PYTHON"])
+        jd = _make_jd(tech_keywords=["Python", "python", "PYTHON"])
         draft = _make_draft(summary="Python developer")
         result = scorer.score(draft, jd)
-        assert result.hard_requirements.total == 1
-        assert result.hard_requirements.matched == 1
+        assert result.tech_keywords.total == 1
+        assert result.tech_keywords.matched == 1
 
-    def test_category_with_no_keywords_excluded_from_weight(self, scorer: KeywordScorer) -> None:
-        # Only hard_requirements present — score should be pure hard_requirements rate
-        jd = _make_jd(hard_requirements=["FastAPI", "Docker"])
+    def test_only_tech_keywords_score_equals_hit_rate(self, scorer: KeywordScorer) -> None:
+        jd = _make_jd(tech_keywords=["FastAPI", "Docker"])
         draft = _make_draft(summary="Built APIs with FastAPI")
         result = scorer.score(draft, jd)
-        assert result.hard_requirements.matched == 1
-        assert result.hard_requirements.total == 2
+        assert result.tech_keywords.matched == 1
+        assert result.tech_keywords.total == 2
         assert result.score == round(1 / 2, 4)

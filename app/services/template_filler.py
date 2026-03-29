@@ -1,3 +1,6 @@
+# DEPRECATED: Jinja2/LaTeX template filling replaced by HTML rendering (resume_renderer.py).
+# Kept for reference. Do not use in new code.
+
 import re
 
 import jinja2

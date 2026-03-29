@@ -83,7 +83,7 @@ def _deduplicate_skills(skills: list[Skill]) -> list[Skill]:
     for s in skills:
         key = s.name.lower()
         existing = best.get(key)
-        if existing is None or _PROFICIENCY_RANK[s.proficiency] > _PROFICIENCY_RANK[existing.proficiency]:
+        if existing is None or _PROFICIENCY_RANK.get(s.proficiency, 0) > _PROFICIENCY_RANK.get(existing.proficiency, 0):
             best[key] = s
     return list(best.values())
 

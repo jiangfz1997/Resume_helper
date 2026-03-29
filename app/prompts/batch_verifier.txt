@@ -1,0 +1,21 @@
+You are reviewing whether recent resume edits have resolved specific diagnostic issues.
+
+The candidate edited the following sections (section path → current full text):
+{changed_sections}
+
+Pending issues to evaluate:
+{tasks_json}
+
+For each issue, check whether ANY of the changed sections now satisfies it semantically.
+The issue's "section" field is only a hint about where the problem was originally found — do NOT use it to restrict which changed sections you check.
+Use the task's "verify_condition" if present; otherwise use its "description" to understand what is required.
+Apply semantic reasoning: if the candidate demonstrates the required skill, concept, or practice through equivalent terms or context, that counts as resolved.
+For example: if the condition asks for REST API experience and the changed content shows building REST endpoints with Django, that satisfies the condition even without the exact phrase "Django REST Framework".
+An issue is resolved when the intent behind the condition is met — not when a specific string is present.
+Err slightly toward resolving when the evidence is strong but not verbatim — the candidate can always re-diagnose.
+
+Return JSON only, no markdown fences:
+{{"resolved": [{{"id": "<task_id>", "reason": "<one sentence why it is now resolved>"}}]}}
+
+Return an empty resolved array if nothing is fixed.
+All string values must be single-line.

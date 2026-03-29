@@ -20,11 +20,6 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
-      path: '/editor',
-      component: () => import('../views/LatexEditorView.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
       path: '/templates',
       component: () => import('../views/TemplatesView.vue'),
       meta: { requiresAuth: true },

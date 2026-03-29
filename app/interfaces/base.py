@@ -2,14 +2,14 @@ import uuid
 from abc import ABC, abstractmethod
 
 from app.models.data_models import (
-    AuditFeedback,
-    DraftResume,
     JobDescription,
     MasterProfile,
     MatchingReport,
     ParsedProfileDraft,
     ProfileUpdate,
+    SelectionResult,
     Skill,
+    SkillGapSuggestion,
     TailoredResumeDraft,
     TemplateCreate,
     TemplateRead,
@@ -68,13 +68,6 @@ class IProfileEnricher(ABC):
     async def enrich(self, draft: ParsedProfileDraft) -> ParsedProfileDraft: ...
 
 
-class ILLMClient(ABC):
-    """Legacy interface kept for reference. Use IProfileParser instead."""
-
-    @abstractmethod
-    async def parse_resume_pdf(self, text: str) -> ParsedProfileDraft: ...
-
-
 class IJDAnalyzer(ABC):
     @abstractmethod
     async def analyze(self, jd_text: str) -> JobDescription: ...
@@ -83,30 +76,6 @@ class IJDAnalyzer(ABC):
 class ISkillMatcher(ABC):
     @abstractmethod
     async def match(self, profile: MasterProfile, jd: JobDescription) -> MatchingReport: ...
-
-
-class IResumeGenerator(ABC):
-    @abstractmethod
-    async def generate(
-        self,
-        profile: MasterProfile,
-        jd: JobDescription,
-        matching_report: MatchingReport,
-        feedback: AuditFeedback | None,
-        iteration: int,
-        preamble: str | None = None,
-        body_example: str | None = None,
-    ) -> DraftResume: ...
-
-
-class IResumeAuditor(ABC):
-    @abstractmethod
-    async def audit(self, draft: DraftResume, jd: JobDescription, threshold: float) -> AuditFeedback: ...
-
-
-class IContentAuditor(ABC):
-    @abstractmethod
-    async def audit(self, draft: TailoredResumeDraft, jd: JobDescription, threshold: float) -> AuditFeedback: ...
 
 
 class IGlobalTemplateRepository(ABC):
@@ -144,3 +113,20 @@ class IDraftPostProcessor(ABC):
 
     @abstractmethod
     def process(self, draft: TailoredResumeDraft) -> TailoredResumeDraft: ...
+
+
+class IExperienceSummarizer(ABC):
+    @abstractmethod
+    async def summarize(self, draft: ParsedProfileDraft) -> ParsedProfileDraft: ...
+
+
+class ITopNSelector(ABC):
+    @abstractmethod
+    async def select(
+        self,
+        profile: MasterProfile,
+        jd: JobDescription,
+        total_budget: int,
+        min_exp: int,
+        min_proj: int,
+    ) -> SelectionResult: ...

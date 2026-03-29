@@ -1,3 +1,6 @@
+# DEPRECATED: LaTeX compilation pipeline replaced by HTML/Playwright PDF export.
+# Kept for reference. Do not use in new code.
+
 import asyncio
 import logging
 import re

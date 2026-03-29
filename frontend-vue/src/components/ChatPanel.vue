@@ -182,6 +182,10 @@ defineExpose({
     pendingScope.value = s
     isOpen.value = true
   },
+  prefill(text: string) {
+    inputText.value = text
+    isOpen.value = true
+  },
 })
 </script>
 

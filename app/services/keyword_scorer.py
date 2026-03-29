@@ -1,36 +1,20 @@
 import re
 from functools import lru_cache
 
-from pydantic import BaseModel
+from langsmith import traceable
 
-from app.models.data_models import JobDescription, MasterProfile, TailoredResumeDraft
+from app.models.data_models import (
+    CategoryMatchResult,
+    JobDescription,
+    KeywordMatchResult,
+    MasterProfile,
+    TailoredResumeDraft,
+)
 
-# Weight per category — required keywords penalise more when missing
-_CATEGORY_WEIGHT: dict[str, float] = {
-    "hard_requirements": 1.0,
-    "core_keywords": 0.8,
+_KW_WEIGHT: dict[str, float] = {
+    "tech_keywords": 0.8,
     "preferred_qualifications": 0.5,
-    "soft_skills": 0.2,
 }
-
-
-class CategoryMatchResult(BaseModel):
-    total: int
-    matched: int
-    missing: list[str]
-
-
-class KeywordMatchResult(BaseModel):
-    # Weighted composite score (0–1)
-    score: float
-    # Per-category breakdown
-    hard_requirements: CategoryMatchResult
-    core_keywords: CategoryMatchResult
-    preferred_qualifications: CategoryMatchResult
-    soft_skills: CategoryMatchResult
-    # Flat lists for logging / display
-    matched_keywords: list[str]
-    missing_keywords: list[str]
 
 
 def _keyword_in_text(keyword: str, text: str) -> bool:
@@ -103,48 +87,46 @@ def _extract_profile_text(profile: MasterProfile) -> str:
     return " ".join(parts)
 
 
+def _build_result(text: str, jd: JobDescription) -> KeywordMatchResult:
+    kw_categories = {
+        "tech_keywords": _dedup(jd.tech_keywords),
+        "preferred_qualifications": _dedup(jd.preferred_qualifications),
+    }
+
+    kw_results = {name: _match_category(kws, text) for name, kws in kw_categories.items()}
+
+    weighted_score = 0.0
+    weight_sum = 0.0
+    all_matched: list[str] = []
+    all_missing: list[str] = []
+
+    for name, cat in kw_results.items():
+        if cat.total == 0:
+            continue
+        w = _KW_WEIGHT[name]
+        weighted_score += w * (cat.matched / cat.total)
+        weight_sum += w
+        matched_in_cat = [kw for kw in kw_categories[name] if kw not in cat.missing]
+        all_matched.extend(matched_in_cat)
+        all_missing.extend(cat.missing)
+
+    final_score = round(weighted_score / weight_sum, 4) if weight_sum > 0 else 0.0
+
+    return KeywordMatchResult(
+        score=final_score,
+        tech_keywords=kw_results["tech_keywords"],
+        preferred_qualifications=kw_results["preferred_qualifications"],
+        matched_keywords=all_matched,
+        missing_keywords=all_missing,
+    )
+
+
 class KeywordScorer:
-    def _score_from_text(self, text: str, jd: JobDescription) -> KeywordMatchResult:
-        categories = {
-            "hard_requirements": _dedup(jd.hard_requirements),
-            "core_keywords": _dedup(jd.core_keywords),
-            "preferred_qualifications": _dedup(jd.preferred_qualifications),
-            "soft_skills": _dedup(jd.soft_skills),
-        }
-
-        results = {name: _match_category(kws, text) for name, kws in categories.items()}
-
-        weighted_score = 0.0
-        weight_sum = 0.0
-        all_matched: list[str] = []
-        all_missing: list[str] = []
-
-        for name, cat in results.items():
-            if cat.total == 0:
-                continue
-            w = _CATEGORY_WEIGHT[name]
-            weighted_score += w * (cat.matched / cat.total)
-            weight_sum += w
-            matched_in_cat = [kw for kw in categories[name] if kw not in cat.missing]
-            all_matched.extend(matched_in_cat)
-            all_missing.extend(cat.missing)
-
-        final_score = round(weighted_score / weight_sum, 4) if weight_sum > 0 else 0.0
-
-        return KeywordMatchResult(
-            score=final_score,
-            hard_requirements=results["hard_requirements"],
-            core_keywords=results["core_keywords"],
-            preferred_qualifications=results["preferred_qualifications"],
-            soft_skills=results["soft_skills"],
-            matched_keywords=all_matched,
-            missing_keywords=all_missing,
-        )
-
     def score(self, draft: TailoredResumeDraft, jd: JobDescription) -> KeywordMatchResult:
         text = _extract_text_cached(draft.model_dump_json())
-        return self._score_from_text(text, jd)
+        return _build_result(text, jd)
 
+    @traceable(run_type="tool", name="keyword_scorer")
     def score_profile(self, profile: MasterProfile, jd: JobDescription) -> KeywordMatchResult:
         text = _extract_profile_text(profile)
-        return self._score_from_text(text, jd)
+        return _build_result(text, jd)

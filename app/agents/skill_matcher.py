@@ -15,19 +15,25 @@ _prompt_text = (Path(__file__).parent.parent / "prompts" / "skill_matcher.txt").
 
 
 def _build_profile_summary(profile: MasterProfile) -> str:
-    skills = [f"{s.name} ({s.proficiency})" for s in profile.skills]
-    exps = [
-        f"{e.title} at {e.company} ({e.start_date}-{e.end_date or 'present'})"
-        for e in profile.work_experiences
-    ]
-    projs = [f"{p.name}: {p.description}" for p in profile.projects]
+    skills = [s.name for s in profile.skills]
     parts = []
     if skills:
         parts.append("Skills: " + ", ".join(skills))
-    if exps:
-        parts.append("Experience:\n" + "\n".join(f"  - {x}" for x in exps))
-    if projs:
-        parts.append("Projects:\n" + "\n".join(f"  - {x}" for x in projs))
+    if profile.work_experiences:
+        exp_lines: list[str] = []
+        for i, e in enumerate(profile.work_experiences):
+            header = f"[{i}] {e.title} at {e.company} ({e.start_date}-{e.end_date or 'present'})"
+            bullets = "".join(f"\n      * {b}" for b in e.description if b.strip())
+            exp_lines.append(f"  - {header}{bullets}")
+        parts.append("Experience:\n" + "\n".join(exp_lines))
+    if profile.projects:
+        proj_lines: list[str] = []
+        for i, p in enumerate(profile.projects):
+            tech = (", ".join(p.tech_stack) + " | ") if p.tech_stack else ""
+            header = f"[{i}] {p.name}: {tech}{p.description}"
+            bullets = "".join(f"\n      * {b}" for b in p.bullets if b.strip())
+            proj_lines.append(f"  - {header}{bullets}")
+        parts.append("Projects:\n" + "\n".join(proj_lines))
     return "\n".join(parts) if parts else "(empty profile)"
 
 

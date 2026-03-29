@@ -1,72 +1,102 @@
 # Model configuration for each agent.
-# Change the model/temperature here; no code changes required.
+# provider: "google" (default) | "ollama"
 #
-# format:
-#   json     - enforce JSON output (required for structured extraction agents)
-#   (omit)   - free-form text output (used for generation / streaming agents)
+# Google provider fields:
+#   model        - Gemini model name
+#   temperature  - 0.0-1.0
+#   thinking_level - override global default ("minimal"|"low"|"medium"|"high")
+#   max_tokens   - max output tokens (optional)
 #
-# num_predict: max output tokens (omit to use the model default)
+# Ollama provider fields (set provider: ollama per-agent to override):
+#   model        - Ollama model tag
+#   base_url     - Ollama server (defaults to global base_url)
+#   format       - "json" to enforce JSON output
+#   num_predict  - max output tokens
 
 base_url: "http://localhost:11434"
+default_provider: google
+
+google:
+  api_key_env: GOOGLE_API_KEY
+  thinking_level: minimal
+  max_retries: 3
+  timeout: 30
 
 agents:
   jd_analyzer:
-    model: qwen2.5-coder:14b
+    model: GOOGLE_FLASH_MODEL
     temperature: 0.3
-    format: json
+    thinking_level: low
 
   skill_matcher:
-    model: qwen2.5-coder:14b
+    model: GOOGLE_FLASH_MODEL
     temperature: 0.3
-    format: json
-    num_predict: 2048
-
-  resume_auditor:
-    model: qwen2.5-coder:14b
-    temperature: 0.3
-    format: json
-
-  content_auditor:
-    model: qwen2.5-coder:14b
-    temperature: 0.3
-    format: json
-
-  resume_generator:
-    model: qwen2.5-coder:14b
-    temperature: 0.3
-
-  content_drafter:
-    model: qwen2.5-coder:14b
-    temperature: 0.3
-    num_predict: 4096
-
-  base_resume_builder:
-    model: qwen2.5-coder:14b
-    temperature: 0.2
-    format: json
+    max_tokens: 2048
+    thinking_level: low
 
   resume_tailor:
-    model: qwen2.5-coder:14b
+    model: GOOGLE_FLASH_MODEL
     temperature: 0.2
-    format: json
+    thinking_level: low
 
   # resume_chat_agent uses two model instances: one for JSON patch, one for streaming text
   resume_chat_json:
-    model: qwen2.5-coder:14b
+    model: GOOGLE_FLASH_MODEL
     temperature: 0.3
-    format: json
+    thinking_level: low
+    timeout: 120
 
   resume_chat_stream:
-    model: qwen2.5-coder:14b
+    model: GOOGLE_FLASH_MODEL
     temperature: 0.3
+    thinking_level: minimal
+    timeout: 120
+
 
   # Two-phase resume PDF parser
   section_detector:
-    model: qwen2.5-coder:14b
+    model: GOOGLE_FLASH_LITE_MODEL
     temperature: 0.0
-    format: json
+    thinking_level: minimal
 
   section_parser:
-    model: qwen2.5-coder:14b
+    model: GOOGLE_FLASH_LITE_MODEL
     temperature: 0.0
-    format: json
+    thinking_level: minimal
+
+  # Copilot diagnostic agents
+  diagnostic_analyzer:
+    model: GOOGLE_FLASH_MODEL
+    temperature: 0.2
+    max_tokens: 8192
+    thinking_level: low
+
+  batch_verifier:
+    model: GOOGLE_FLASH_MODEL
+    temperature: 0.0
+    max_tokens: 1024
+    thinking_level: minimal
+
+  micro_validator:
+    model: GOOGLE_FLASH_LITE_MODEL
+    temperature: 0.0
+    max_tokens: 256
+    thinking_level: minimal
+
+  chat_intent_router:
+    model: GOOGLE_FLASH_LITE_MODEL
+    temperature: 0.0
+    max_tokens: 128
+    thinking_level: minimal
+
+  experience_summarizer:
+    model: GOOGLE_FLASH_LITE_MODEL
+    temperature: 0.0
+    max_tokens: 512
+    thinking_level: low
+
+  top_n_selector:
+    model: GOOGLE_FLASH_MODEL
+    temperature: 0.1
+    max_tokens: 512
+    thinking_level: low

@@ -59,9 +59,8 @@ async def test_jd_analyzer_returns_job_description():
     mock_chain.ainvoke.return_value = {
         "title": "Backend Engineer",
         "company": "TechCorp",
-        "hard_requirements": ["Python", "FastAPI"],
-        "core_keywords": ["REST", "async"],
-        "soft_skills": ["communication"],
+        "qualifications": ["3+ years backend engineering"],
+        "tech_keywords": ["Python", "FastAPI", "REST"],
         "preferred_qualifications": ["Docker"],
     }
 
@@ -69,7 +68,7 @@ async def test_jd_analyzer_returns_job_description():
 
     assert isinstance(result, JobDescription)
     assert result.title == "Backend Engineer"
-    assert "Python" in result.hard_requirements
+    assert "Python" in result.tech_keywords
     mock_chain.ainvoke.assert_called_once_with({"jd_text": "Sample JD text"})
 
 
@@ -84,7 +83,7 @@ async def test_skill_matcher_returns_matching_report():
     }
 
     profile = _make_profile()
-    jd = JobDescription(title="Backend Engineer", hard_requirements=["Python"])
+    jd = JobDescription(title="Backend Engineer", tech_keywords=["Python"])
 
     result = await matcher.match(profile, jd)
 

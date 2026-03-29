@@ -35,4 +35,4 @@ Return a JSON object with key "items" (one object per individual skill, not per 
 Skills section text:
 {section_text}
 
-Return only the JSON array.
+Return only the JSON object.

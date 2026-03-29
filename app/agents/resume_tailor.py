@@ -1,12 +1,73 @@
+import json
 from pathlib import Path
+from typing import Optional
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 from app.core.model_factory import get_model_factory
-from app.models.data_models import JobDescription, MatchingReport, TailoredResumeDraft
+from app.models.data_models import (
+    JobDescription,
+    MasterProfile,
+    MatchingReport,
+    TailoredResumeDraft,
+    WorkExperience,
+    Project,
+)
 
 _prompt_text = (Path(__file__).parent.parent / "prompts" / "resume_tailor.txt").read_text(encoding="utf-8")
+
+
+def _select_items(items: list, indices: list[int]) -> list:
+    if not indices:
+        return list(items)
+    return [items[i] for i in indices if 0 <= i < len(items)]
+
+
+def _build_profile_json(
+    profile: MasterProfile,
+    exp_indices: list[int],
+    proj_indices: list[int],
+) -> str:
+    sorted_exp = _select_items(profile.work_experiences, exp_indices)
+    sorted_proj = _select_items(profile.projects, proj_indices)
+    data = {
+        "work_experiences": [
+            {
+                "title": e.title,
+                "company": e.company,
+                "start_date": e.start_date,
+                "end_date": e.end_date,
+                "description": e.description,
+            }
+            for e in sorted_exp
+        ],
+        "projects": [
+            {
+                "name": p.name,
+                "description": p.description,
+                "tech_stack": p.tech_stack,
+                "url": p.url,
+                "bullets": p.bullets,
+            }
+            for p in sorted_proj
+        ],
+        "skills": [{"name": s.name, "category": s.category} for s in profile.skills],
+    }
+    return json.dumps(data)
+
+
+def _normalize_tailor_result(result: dict, profile: MasterProfile) -> None:
+    """Fix common LLM omissions before Pydantic validation.
+
+    - experiences[*].location: None → ""
+    - education: missing → copy from profile (overwritten by model_copy anyway)
+    """
+    for exp in result.get("experiences", []):
+        if exp.get("location") is None:
+            exp["location"] = ""
+    if "education" not in result or result["education"] is None:
+        result["education"] = [e.model_dump() for e in profile.educations]
 
 
 class OllamaResumeTailor:
@@ -17,13 +78,29 @@ class OllamaResumeTailor:
 
     async def tailor(
         self,
-        base_resume: TailoredResumeDraft,
+        profile: MasterProfile,
         jd: JobDescription,
         matching_report: MatchingReport,
+        current_title: str,
+        template_id: Optional[object] = None,
+        template_source: Optional[str] = None,
     ) -> TailoredResumeDraft:
+        profile_json = _build_profile_json(
+            profile,
+            matching_report.highlighted_experience_indices,
+            matching_report.highlighted_project_indices,
+        )
         result = await self._chain.ainvoke({
-            "base_resume_json": base_resume.model_dump_json(),
+            "current_title": current_title,
+            "profile_json": profile_json,
             "jd_json": jd.model_dump_json(),
             "matching_report_json": matching_report.model_dump_json(),
         })
-        return TailoredResumeDraft.model_validate(result)
+        _normalize_tailor_result(result, profile)
+        draft = TailoredResumeDraft.model_validate(result)
+        return draft.model_copy(update={
+            "education": profile.educations,
+            "contact_info": profile.contact_info,
+            "template_id": template_id,
+            "template_source": template_source,
+        })

@@ -1,29 +1,92 @@
 import logging
+import re
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from app.interfaces.base import IJDAnalyzer, IResumeAuditor, IResumeGenerator, ISkillMatcher
+from app.interfaces.base import IJDAnalyzer, ISkillMatcher, ITopNSelector
 from app.models.data_models import (
-    AuditFeedback,
-    DraftResume,
-    GenerateConfirmRequest,
     JobDescription,
     MasterProfile,
     MatchingPreview,
     MatchingReport,
-    PipelineConfig,
-    PipelineStatus,
     ResumeAnalyzeRequest,
-    ResumeRequest,
-    ResumeResponse,
+    SelectionResult,
+    SkillGapSuggestion,
 )
+from langsmith import traceable
+
 from app.services.keyword_scorer import KeywordScorer
 from app.services.profile_manager import ProfileManager
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_TOTAL_BUDGET = 6
+_DEFAULT_MIN_EXP = 1
+_DEFAULT_MIN_PROJ = 1
+
+_INTERN_KEYWORDS = {"intern", "internship", "co-op", "coop", "co op", "student"}
+
+
+def _parse_ym(s: str) -> date:
+    s = s.strip().lower()
+    if not s or s in ("present", "current", "now", ""):
+        return date.today()
+    parts = s.split("-")
+    try:
+        if len(parts) >= 2:
+            return date(int(parts[0]), int(parts[1]), 1)
+        return date(int(parts[0]), 1, 1)
+    except (ValueError, IndexError):
+        return date.today()
+
+
+def _calc_ft_experience_years(experiences: list) -> float:
+    total_days = 0
+    for exp in experiences:
+        title_lower = (exp.title or "").lower()
+        if any(kw in title_lower for kw in _INTERN_KEYWORDS):
+            continue
+        try:
+            start = _parse_ym(exp.start_date or "")
+            end = _parse_ym(exp.end_date or "present")
+            days = (end - start).days
+            if days > 0:
+                total_days += days
+        except Exception:
+            continue
+    return round(total_days / 365.25, 2)
+
+
+def _validate_qualification_years(
+    report: MatchingReport,
+    profile: MasterProfile,
+) -> MatchingReport:
+    actual_years = _calc_ft_experience_years(profile.work_experiences)
+    corrected = []
+    changed = False
+    for q in report.qualification_details:
+        m = re.search(r"(\d+)\+?\s*years?", q.item, re.IGNORECASE)
+        if m and q.matched:
+            required = int(m.group(1))
+            if actual_years < required:
+                corrected.append(q.model_copy(update={
+                    "matched": False,
+                    "reason": f"FT experience ~{actual_years:.1f} yrs (excl. internships), requires {required}+",
+                }))
+                changed = True
+                logger.info(
+                    "qualification_validator | overrode matched=True for %r | actual=%.1f required=%d",
+                    q.item, actual_years, required,
+                )
+                continue
+        corrected.append(q)
+    if not changed:
+        return report
+    return report.model_copy(update={"qualification_details": corrected})
 
 
 @dataclass
@@ -37,19 +100,10 @@ class AnalysisResult:
 class _GraphState(TypedDict):
     user_id: str
     jd_text: str
-    config: PipelineConfig
-    preamble: Optional[str]
-    body_example: Optional[str]
     profile: Optional[MasterProfile]
     jd: Optional[JobDescription]
+    selection: Optional[SelectionResult]
     matching_report: Optional[MatchingReport]
-    current_draft: Optional[DraftResume]
-    feedback: Optional[AuditFeedback]
-    best_draft: Optional[DraftResume]
-    best_score: float
-    retry_count: int
-    current_threshold: float
-    status: PipelineStatus
 
 
 class ResumePipeline:
@@ -58,35 +112,31 @@ class ResumePipeline:
         profile_manager: ProfileManager,
         jd_analyzer: IJDAnalyzer,
         skill_matcher: ISkillMatcher,
-        resume_generator: IResumeGenerator,
-        resume_auditor: IResumeAuditor,
+        top_n_selector: ITopNSelector,
+        total_budget: int = _DEFAULT_TOTAL_BUDGET,
+        min_exp: int = _DEFAULT_MIN_EXP,
+        min_proj: int = _DEFAULT_MIN_PROJ,
     ) -> None:
         self._profile_manager = profile_manager
         self._jd_analyzer = jd_analyzer
         self._skill_matcher = skill_matcher
-        self._resume_generator = resume_generator
-        self._resume_auditor = resume_auditor
-        self._analysis_graph = self._build_analysis_graph()
-        self._generation_graph = self._build_generation_graph()
+        self._top_n_selector = top_n_selector
+        self._total_budget = total_budget
+        self._min_exp = min_exp
+        self._min_proj = min_proj
+        self._graph = self._build_graph()
 
-    def _build_analysis_graph(self) -> object:
+    def _build_graph(self) -> object:
         graph: StateGraph = StateGraph(_GraphState)  # type: ignore[type-arg]
         graph.add_node("load_profile", self._load_profile_node)  # type: ignore[arg-type]
         graph.add_node("analyze_jd", self._analyze_jd_node)  # type: ignore[arg-type]
+        graph.add_node("select_top_n", self._select_top_n_node)  # type: ignore[arg-type]
         graph.add_node("match_skills", self._match_skills_node)  # type: ignore[arg-type]
         graph.set_entry_point("load_profile")
         graph.add_edge("load_profile", "analyze_jd")
-        graph.add_edge("analyze_jd", "match_skills")
+        graph.add_edge("analyze_jd", "select_top_n")
+        graph.add_edge("select_top_n", "match_skills")
         graph.add_edge("match_skills", END)
-        return graph.compile()
-
-    def _build_generation_graph(self) -> object:
-        graph: StateGraph = StateGraph(_GraphState)  # type: ignore[type-arg]
-        graph.add_node("generate", self._generate_node)  # type: ignore[arg-type]
-        graph.add_node("audit", self._audit_node)  # type: ignore[arg-type]
-        graph.set_entry_point("generate")
-        graph.add_edge("generate", "audit")
-        graph.add_conditional_edges("audit", self._route_after_audit)  # type: ignore[arg-type]
         return graph.compile()
 
     async def _load_profile_node(self, state: _GraphState) -> dict:
@@ -105,166 +155,139 @@ class ResumePipeline:
         jd = await self._jd_analyzer.analyze(state["jd_text"])
         logger.debug(
             "node:analyze_jd | done | title=%s hard_reqs=%d keywords=%d",
-            jd.title, len(jd.hard_requirements), len(jd.core_keywords),
+            jd.title, len(jd.qualifications), len(jd.tech_keywords),
         )
         return {"jd": jd}
 
+    async def _select_top_n_node(self, state: _GraphState) -> dict:
+        profile: MasterProfile = state["profile"]
+        jd: JobDescription = state["jd"]
+        logger.debug(
+            "node:select_top_n | exp=%d proj=%d budget=%d",
+            len(profile.work_experiences), len(profile.projects), self._total_budget,
+        )
+        selection = await self._top_n_selector.select(
+            profile, jd, self._total_budget, self._min_exp, self._min_proj,
+        )
+        logger.debug(
+            "node:select_top_n | selected exp=%s proj=%s",
+            selection.selected_experience_indices, selection.selected_project_indices,
+        )
+        return {"selection": selection}
+
     async def _match_skills_node(self, state: _GraphState) -> dict:
-        logger.debug("node:match_skills | profile_skills=%d", len(state["profile"].skills))
-        report = await self._skill_matcher.match(state["profile"], state["jd"])
+        profile: MasterProfile = state["profile"]
+        jd: JobDescription = state["jd"]
+        selection: SelectionResult = state["selection"]
+
+        selected_exp = [profile.work_experiences[i] for i in selection.selected_experience_indices if i < len(profile.work_experiences)]
+        selected_proj = [profile.projects[i] for i in selection.selected_project_indices if i < len(profile.projects)]
+        filtered_profile = profile.model_copy(update={
+            "work_experiences": selected_exp,
+            "projects": selected_proj,
+        })
+
+        logger.debug(
+            "node:match_skills | filtered profile: exp=%d proj=%d skills=%d",
+            len(filtered_profile.work_experiences), len(filtered_profile.projects), len(filtered_profile.skills),
+        )
+        report = await self._skill_matcher.match(filtered_profile, jd)
         logger.debug(
             "node:match_skills | done | matched=%d missing=%d",
             len(report.matched_skills), len(report.missing_skills),
         )
         return {"matching_report": report}
 
-    async def _generate_node(self, state: _GraphState) -> dict:
-        logger.debug(
-            "node:generate | iteration=%d feedback=%s",
-            state["retry_count"], "yes" if state["feedback"] else "none",
-        )
-        draft = await self._resume_generator.generate(
-            profile=state["profile"],
-            jd=state["jd"],
-            matching_report=state["matching_report"],
-            feedback=state["feedback"],
-            iteration=state["retry_count"],
-            preamble=state.get("preamble"),
-            body_example=state.get("body_example"),
-        )
-        logger.debug("node:generate | done | latex_len=%d", len(draft.latex_content))
-        return {"current_draft": draft}
+    @staticmethod
+    def _compute_skill_gaps(
+        profile: MasterProfile,
+        jd: JobDescription,
+        selection: SelectionResult,
+    ) -> list[SkillGapSuggestion]:
+        selected_kw: set[str] = set()
+        for i in selection.selected_experience_indices:
+            if i < len(profile.work_experiences):
+                for kw in profile.work_experiences[i].ai_keywords:
+                    selected_kw.add(kw.lower())
+        for j in selection.selected_project_indices:
+            if j < len(profile.projects):
+                for kw in profile.projects[j].ai_keywords:
+                    selected_kw.add(kw.lower())
 
-    async def _audit_node(self, state: _GraphState) -> dict:
-        cfg: PipelineConfig = state["config"]
-        logger.debug("node:audit | iteration=%d threshold=%.2f", state["retry_count"], state["current_threshold"])
-        feedback = await self._resume_auditor.audit(
-            state["current_draft"],
-            state["jd"],
-            state["current_threshold"],
-        )
-        logger.info(
-            "node:audit | score=%.2f approved=%s suggestions=%d",
-            feedback.score, feedback.approved, len(feedback.suggestions),
-        )
+        exp_set = set(selection.selected_experience_indices)
+        proj_set = set(selection.selected_project_indices)
+        suggestions: list[SkillGapSuggestion] = []
 
-        new_best_score = state["best_score"]
-        new_best_draft = state["best_draft"]
-        if feedback.score > state["best_score"]:
-            new_best_score = feedback.score
-            new_best_draft = state["current_draft"]
+        for kw in jd.tech_keywords:
+            if kw.lower() in selected_kw:
+                continue
+            covered_by: list[str] = []
+            for i, exp in enumerate(profile.work_experiences):
+                if i not in exp_set and kw.lower() in [k.lower() for k in exp.ai_keywords]:
+                    covered_by.append(f"{exp.title} @ {exp.company}")
+            for j, proj in enumerate(profile.projects):
+                if j not in proj_set and kw.lower() in [k.lower() for k in proj.ai_keywords]:
+                    covered_by.append(proj.name)
+            if covered_by:
+                suggestions.append(SkillGapSuggestion(missing_keyword=kw, covered_by=covered_by))
 
-        new_retry_count = state["retry_count"] + 1
+        return suggestions
 
-        if feedback.approved:
-            new_status = PipelineStatus.approved
-        elif new_retry_count >= cfg.max_retries:
-            new_status = PipelineStatus.max_retries_reached
-        else:
-            new_status = PipelineStatus.in_progress
-
-        new_threshold = max(
-            cfg.min_threshold,
-            state["current_threshold"] - cfg.decay_per_retry,
-        )
-
-        logger.debug("node:audit | next_status=%s next_threshold=%.2f", new_status, new_threshold)
-        return {
-            "feedback": feedback,
-            "best_score": new_best_score,
-            "best_draft": new_best_draft,
-            "retry_count": new_retry_count,
-            "current_threshold": new_threshold,
-            "status": new_status,
-        }
-
-    def _route_after_audit(self, state: _GraphState) -> str:
-        next_node = "generate" if state["status"] == PipelineStatus.in_progress else END
-        logger.debug("node:route | -> %s", next_node)
-        return next_node
-
-    def _blank_state(self, user_id: str, jd_text: str, config: PipelineConfig) -> _GraphState:
-        return {
-            "user_id": user_id,
-            "jd_text": jd_text,
-            "config": config,
-            "preamble": None,
-            "body_example": None,
-            "profile": None,
-            "jd": None,
-            "matching_report": None,
-            "current_draft": None,
-            "feedback": None,
-            "best_draft": None,
-            "best_score": 0.0,
-            "retry_count": 0,
-            "current_threshold": config.initial_threshold,
-            "status": PipelineStatus.in_progress,
-        }
-
+    @traceable(run_type="chain", name="analyze_and_preview")
     async def analyze_and_preview(
         self,
         user_id: uuid.UUID,
         request: ResumeAnalyzeRequest,
     ) -> AnalysisResult:
-        default_cfg = PipelineConfig()
-        initial_state = self._blank_state(str(user_id), request.jd_text, default_cfg)
+        initial_state: _GraphState = {
+            "user_id": str(user_id),
+            "jd_text": request.jd_text,
+            "profile": None,
+            "jd": None,
+            "selection": None,
+            "matching_report": None,
+        }
 
-        final_state = await self._analysis_graph.ainvoke(initial_state)
+        from app.pipeline._studio import _invoke
+        final_state = await _invoke("resume_pipeline", self._graph, initial_state)
 
         profile: MasterProfile = final_state["profile"]
         jd: JobDescription = final_state["jd"]
-        report: MatchingReport = final_state["matching_report"]
+        report: MatchingReport = _validate_qualification_years(final_state["matching_report"], profile)
+        selection: SelectionResult = final_state["selection"]
 
-        total = len(report.matched_skills) + len(report.missing_skills)
-        match_score = len(report.matched_skills) / total if total > 0 else 0.0
+        total_skills = len(report.matched_skills) + len(report.missing_skills)
+        skill_score = len(report.matched_skills) / total_skills if total_skills > 0 else 0.0
+
+        qual_details = report.qualification_details
+        qual_score = (
+            sum(1 for q in qual_details if q.matched) / len(qual_details)
+            if qual_details else None
+        )
+
+        match_score = (
+            round(0.3 * skill_score + 0.7 * qual_score, 4)
+            if qual_score is not None
+            else skill_score
+        )
 
         kw_result = KeywordScorer().score_profile(profile, jd)
-        req = kw_result.hard_requirements
+        gap_suggestions = self._compute_skill_gaps(profile, jd, selection)
 
         preview = MatchingPreview(
-            session_id="",  # filled in by route after DB insert
+            session_id="",
             match_score=match_score,
             job_title=jd.title,
             company=jd.company,
             matched_skills=report.matched_skills,
             missing_skills=report.missing_skills,
-            highlighted_experiences=report.highlighted_experiences,
+            highlighted_experience_indices=selection.selected_experience_indices,
+            highlighted_project_indices=selection.selected_project_indices,
             all_experiences=profile.work_experiences,
             all_projects=profile.projects,
             relevance_notes=report.relevance_notes,
-            keyword_coverage=kw_result.score,
-            required_coverage=round(req.matched / req.total, 4) if req.total else 0.0,
+            qualification_details=report.qualification_details,
+            kw_detail=kw_result,
+            skill_gap_suggestions=gap_suggestions,
         )
         return AnalysisResult(preview=preview, profile=profile, jd=jd, matching_report=report)
-
-
-    async def run(self, user_id: uuid.UUID, request: ResumeRequest) -> ResumeResponse:
-        initial_state = self._blank_state(str(user_id), request.jd_text, request.config)
-        full_graph = self._build_full_graph()
-        final_state = await full_graph.ainvoke(initial_state)
-
-        if final_state["best_draft"] is None:
-            raise ValueError("Pipeline failed to produce a resume draft")
-
-        return ResumeResponse(
-            latex_content=final_state["best_draft"].latex_content,
-            score=final_state["best_score"],
-            retries=final_state["retry_count"],
-            status=final_state["status"],
-        )
-
-    def _build_full_graph(self) -> object:
-        graph: StateGraph = StateGraph(_GraphState)  # type: ignore[type-arg]
-        graph.add_node("load_profile", self._load_profile_node)  # type: ignore[arg-type]
-        graph.add_node("analyze_jd", self._analyze_jd_node)  # type: ignore[arg-type]
-        graph.add_node("match_skills", self._match_skills_node)  # type: ignore[arg-type]
-        graph.add_node("generate", self._generate_node)  # type: ignore[arg-type]
-        graph.add_node("audit", self._audit_node)  # type: ignore[arg-type]
-        graph.set_entry_point("load_profile")
-        graph.add_edge("load_profile", "analyze_jd")
-        graph.add_edge("analyze_jd", "match_skills")
-        graph.add_edge("match_skills", "generate")
-        graph.add_edge("generate", "audit")
-        graph.add_conditional_edges("audit", self._route_after_audit)  # type: ignore[arg-type]
-        return graph.compile()

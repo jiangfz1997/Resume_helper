@@ -9,9 +9,12 @@ pymupdf>=1.24.0
 pyyaml>=6.0
 langchain-ollama>=0.2.0
 langchain-core>=0.3.0
+langchain-google-genai>=2.0.0
 langgraph
+langsmith>=0.1.0
 pydantic>=2.7.0
 pydantic-settings>=2.2.0
 python-multipart>=0.0.9
 email-validator>=2.1.0
 jinja2>=3.1.0
+playwright>=1.40.0

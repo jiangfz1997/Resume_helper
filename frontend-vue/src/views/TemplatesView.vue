@@ -1,5 +1,9 @@
 <template>
   <div>
+    <!-- DEPRECATED: LaTeX template workflow is no longer active. This page is kept for reference only. -->
+    <n-alert type="warning" style="margin-bottom: 20px">
+      Templates are currently unavailable. The LaTeX-based template workflow has been deprecated.
+    </n-alert>
     <n-space vertical size="large">
 
       <!-- Upload card -->

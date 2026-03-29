@@ -27,7 +27,7 @@ def _make_profile() -> MasterProfile:
 
 
 def _make_jd() -> JobDescription:
-    return JobDescription(title="Backend Engineer", hard_requirements=["Python"])
+    return JobDescription(title="Backend Engineer", tech_keywords=["Python"])
 
 
 def _make_report() -> MatchingReport:

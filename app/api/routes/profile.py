@@ -8,15 +8,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import (
-    get_base_resume_builder,
     get_current_user_id,
     get_profile_chat_agent,
     get_profile_parse_pipeline,
     get_profile_repo,
 )
-from app.agents.base_resume_builder import OllamaBaseResumeBuilder
 from app.agents.profile_chat_agent import OllamaProfileChatAgent
-from app.models.data_models import MasterProfile, ParsedProfileDraft, ProfileChatRequest, ProfileUpdate, SkillsAppend, TailoredResumeDraft
+from app.models.data_models import MasterProfile, MockProfileInjectRequest, ParsedProfileDraft, ProfileChatRequest, ProfileUpdate, SkillsAppend
 from app.pipeline.profile_pipeline import ProfileParsePipeline
 from app.repositories.profile_repository import ProfileRepository
 from app.services.profile_manager import ProfileManager
@@ -40,9 +38,10 @@ def _extract_pdf_text(content: bytes) -> str:
         blocks.sort(key=lambda b: (round(b[1] / 5) * 5, b[0]))
         for block in blocks:
             text: str = block[4]
-            cleaned = " ".join(text.split())
-            if cleaned:
-                result_lines.append(cleaned)
+            for line in text.splitlines():
+                cleaned = " ".join(line.split())
+                if cleaned:
+                    result_lines.append(cleaned)
     return "\n".join(result_lines)
 
 
@@ -112,41 +111,6 @@ async def append_skills(
     return profile
 
 
-@router.post("/base-resume/generate", response_model=TailoredResumeDraft)
-async def generate_base_resume(
-    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
-    manager: Annotated[ProfileManager, Depends(_get_profile_manager)],
-    builder: Annotated[OllamaBaseResumeBuilder, Depends(get_base_resume_builder)],
-) -> TailoredResumeDraft:
-    logger.info("generate_base_resume | user_id=%s", user_id)
-    profile = await manager.load_master_profile(user_id)
-    if profile is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-    if not profile.work_experiences and not profile.projects:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Profile has no work experience or projects to build from",
-        )
-    try:
-        draft = await builder.build(profile)
-    except Exception as exc:
-        logger.error("generate_base_resume | build failed | user_id=%s | %s", user_id, exc)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
-    await manager.save_base_resume(user_id, draft)
-    logger.info("generate_base_resume | done | user_id=%s", user_id)
-    return draft
-
-
-@router.put("/base-resume", response_model=TailoredResumeDraft)
-async def save_base_resume(
-    draft: TailoredResumeDraft,
-    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
-    manager: Annotated[ProfileManager, Depends(_get_profile_manager)],
-) -> TailoredResumeDraft:
-    logger.debug("save_base_resume | user_id=%s", user_id)
-    await manager.save_base_resume(user_id, draft)
-    return draft
-
 
 @router.post("/chat/stream")
 async def stream_profile_chat(
@@ -202,9 +166,68 @@ async def confirm_parsed_draft(
     user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
     manager: Annotated[ProfileManager, Depends(_get_profile_manager)],
 ) -> MasterProfile:
-    logger.debug("confirm_draft | user_id=%s skills=%d experiences=%d", user_id, len(draft.skills), len(draft.work_experiences))
-    profile = await manager.append_parsed_draft(user_id, draft)
+    logger.debug(
+        "confirm_draft | user_id=%s skills=%d experiences=%d projects=%d",
+        user_id, len(draft.skills), len(draft.work_experiences), len(draft.projects),
+    )
+    for i, p in enumerate(draft.projects):
+        logger.debug("confirm_draft | project[%d] name=%s bullets=%d", i, p.name, len(p.bullets))
+    profile = await manager.replace_parsed_draft(user_id, draft)
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
     logger.info("confirm_draft | success | user_id=%s", user_id)
+    return profile
+
+
+def _parse_time_range(time_str: str) -> tuple[str, str | None]:
+    from app.agents.profile_enricher import _normalize_date
+    parts = [p.strip() for p in time_str.split(" - ", 1)]
+    start = _normalize_date(parts[0]) or "" if parts else ""
+    end: str | None = None
+    if len(parts) > 1 and parts[1].lower() not in ("present", "now", "current", ""):
+        end = _normalize_date(parts[1])
+    return start, end
+
+
+@router.post("/inject-mock", response_model=MasterProfile)
+async def inject_mock_profile(
+    request: MockProfileInjectRequest,
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+    manager: Annotated[ProfileManager, Depends(_get_profile_manager)],
+) -> MasterProfile:
+    from app.models.data_models import Project, WorkExperience
+    from app.agents.profile_enricher import CodeProfileEnricher
+
+    work_experiences: list[WorkExperience] = []
+    for w in request.works:
+        start, end = _parse_time_range(w.time)
+        work_experiences.append(WorkExperience(
+            title=w.name,
+            company=w.location or "—",
+            start_date=start,
+            end_date=end,
+            description=w.experiences,
+        ))
+
+    projects: list[Project] = []
+    for p in request.projects:
+        projects.append(Project(
+            name=p.name,
+            description=p.experiences[0] if p.experiences else p.name,
+            bullets=p.experiences,
+        ))
+
+    from app.agents.experience_summarizer import ExperienceSummarizer
+
+    draft = ParsedProfileDraft(work_experiences=work_experiences, projects=projects)
+    enriched = await CodeProfileEnricher().enrich(draft)
+    summarized = await ExperienceSummarizer().summarize(enriched)
+
+    profile = await manager.append_parsed_draft(user_id, summarized)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    logger.info(
+        "inject_mock | user_id=%s | works=%d projects=%d skills=%d",
+        user_id, len(summarized.work_experiences), len(summarized.projects), len(summarized.skills),
+    )
     return profile

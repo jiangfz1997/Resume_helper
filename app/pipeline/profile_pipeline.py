@@ -3,7 +3,7 @@ from typing import Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from app.interfaces.base import IProfileEnricher, IProfileParser
+from app.interfaces.base import IExperienceSummarizer, IProfileEnricher, IProfileParser
 from app.models.data_models import ParsedProfileDraft
 
 logger = logging.getLogger(__name__)
@@ -15,18 +15,26 @@ class _GraphState(TypedDict):
 
 
 class ProfileParsePipeline:
-    def __init__(self, parser: IProfileParser, enricher: IProfileEnricher) -> None:
+    def __init__(
+        self,
+        parser: IProfileParser,
+        enricher: IProfileEnricher,
+        summarizer: IExperienceSummarizer,
+    ) -> None:
         self._parser = parser
         self._enricher = enricher
+        self._summarizer = summarizer
         self._graph = self._build_graph()
 
     def _build_graph(self) -> object:
         graph: StateGraph = StateGraph(_GraphState)  # type: ignore[type-arg]
         graph.add_node("parse", self._parse_node)  # type: ignore[arg-type]
         graph.add_node("enrich", self._enrich_node)  # type: ignore[arg-type]
+        graph.add_node("summarize", self._summarize_node)  # type: ignore[arg-type]
         graph.set_entry_point("parse")
         graph.add_edge("parse", "enrich")
-        graph.add_edge("enrich", END)
+        graph.add_edge("enrich", "summarize")
+        graph.add_edge("summarize", END)
         return graph.compile()
 
     async def _parse_node(self, state: _GraphState) -> dict:
@@ -48,6 +56,16 @@ class ProfileParsePipeline:
             len(enriched.skills), len(enriched.work_experiences),
         )
         return {"draft": enriched}
+
+    async def _summarize_node(self, state: _GraphState) -> dict:
+        draft: ParsedProfileDraft = state["draft"]
+        logger.debug(
+            "node:summarize | exp=%d proj=%d",
+            len(draft.work_experiences), len(draft.projects),
+        )
+        summarized = await self._summarizer.summarize(draft)
+        logger.debug("node:summarize | done")
+        return {"draft": summarized}
 
     async def run(self, raw_text: str) -> ParsedProfileDraft:
         if not raw_text.strip():

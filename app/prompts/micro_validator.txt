@@ -1,0 +1,16 @@
+You are evaluating whether a piece of resume text satisfies a specific condition.
+
+Text to evaluate:
+{text}
+
+Condition to check:
+{condition}
+
+Return a JSON object with exactly this structure:
+{{"passed": true | false, "reasoning": "<one sentence explanation>"}}
+
+Rules:
+- passed=true only if the text clearly and unambiguously satisfies the condition
+- Do not infer or assume — evaluate only what is explicitly stated in the text
+- Keep reasoning to one sentence, max 20 words
+- Return only the JSON object. No markdown fences.

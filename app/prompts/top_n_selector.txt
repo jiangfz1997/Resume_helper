@@ -1,0 +1,17 @@
+You are a resume strategist. From the candidate items below, select the ones that are most semantically relevant to the job description.
+
+Job Description:
+{jd_json}
+
+Candidate items:
+{items_json}
+
+Instructions:
+- Select items whose domain, responsibilities, or technologies align with the JD role.
+- Bias strongly toward inclusion — only exclude an item if it is completely unrelated.
+- Prefer combinations that together cover diverse aspects of the JD (avoid redundant picks).
+- Prefer recent and high-impact items when relevance is similar.
+- Return the IDs of selected items. You may select up to {max_select} items.
+
+Respond with a JSON object only, no markdown:
+{"selected_ids": ["exp_0", "proj_1", ...]}

@@ -114,9 +114,8 @@ SAMPLE_V2_INPUT: dict[str, Any] = {
     "jd": {
         "title": "Senior Backend Engineer",
         "company": "TechCorp",
-        "hard_requirements": ["Python", "distributed systems", "REST API", "PostgreSQL"],
-        "core_keywords": ["microservices", "Docker", "Kubernetes", "CI/CD"],
-        "soft_skills": ["ownership", "communication", "collaboration"],
+        "qualifications": ["5+ years backend engineering experience", "distributed systems experience"],
+        "tech_keywords": ["Python", "REST API", "PostgreSQL", "microservices", "Docker", "Kubernetes", "CI/CD"],
         "preferred_qualifications": ["Go", "Kafka", "AWS"],
     },
     "matching_report": {

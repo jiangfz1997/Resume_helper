@@ -2,7 +2,7 @@
   "dependencies": ["."],
   "graphs": {
     "profile_parse": "./graphs.py:profile_parse_graph",
-    "v2_resume": "./graphs.py:v2_resume_graph"
+    "resume_pipeline": "./graphs.py:resume_pipeline_graph"
   },
   "env": ".env"
 }

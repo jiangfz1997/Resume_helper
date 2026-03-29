@@ -211,6 +211,30 @@
             </n-form-item>
           </n-card>
 
+          <!-- Contact Info -->
+          <n-card title="Contact Info">
+            <n-grid :cols="2" :x-gap="12" :y-gap="8">
+              <n-gi><n-form-item label="Email" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.email" placeholder="you@example.com" size="small" />
+              </n-form-item></n-gi>
+              <n-gi><n-form-item label="Phone" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.phone" placeholder="+1 555 000 0000" size="small" />
+              </n-form-item></n-gi>
+              <n-gi :span="2"><n-form-item label="Location" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.location" placeholder="City, Province / State, Country" size="small" />
+              </n-form-item></n-gi>
+              <n-gi><n-form-item label="LinkedIn" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.linkedin" placeholder="linkedin.com/in/yourname" size="small" />
+              </n-form-item></n-gi>
+              <n-gi><n-form-item label="GitHub" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.github" placeholder="github.com/yourname" size="small" />
+              </n-form-item></n-gi>
+              <n-gi :span="2"><n-form-item label="Website" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.website" placeholder="https://yoursite.com" size="small" />
+              </n-form-item></n-gi>
+            </n-grid>
+          </n-card>
+
           <!-- Summary -->
           <n-card title="Summary">
             <template #header-extra>
@@ -680,6 +704,47 @@
         </n-card>
       </n-tab-pane>
 
+      <!-- ── Dev Import ── -->
+      <n-tab-pane name="dev" tab="Dev Import">
+        <n-card style="margin-top: 12px">
+          <n-space vertical size="large">
+            <n-space align="center" justify="space-between">
+              <n-text style="font-size: 13px; font-weight: 600">Dev Tools</n-text>
+              <n-popconfirm @positive-click="runClearProfile">
+                <template #trigger>
+                  <n-button size="small" type="error" :loading="clearLoading">Clear All Profile Data</n-button>
+                </template>
+                This will wipe all work experiences, projects, educations, and skills. Continue?
+              </n-popconfirm>
+            </n-space>
+            <n-alert v-if="clearError" type="error">{{ clearError }}</n-alert>
+            <n-alert v-if="clearSuccess" type="success">{{ clearSuccess }}</n-alert>
+            <n-divider style="margin: 4px 0" />
+            <n-text depth="3" style="font-size:12px">
+              Paste mock_exp.json content (format: {"{"} projects: [...], works: [...] {"}"}) and click Import. Replaces current profile experiences and projects.
+            </n-text>
+            <n-input
+              v-model:value="mockJson"
+              type="textarea"
+              :autosize="{ minRows: 12, maxRows: 24 }"
+              placeholder="Paste JSON here..."
+              style="font-family: monospace; font-size: 12px"
+            />
+            <n-space>
+              <n-button
+                type="primary"
+                :loading="mockImporting"
+                :disabled="!mockJson.trim()"
+                @click="runMockImport"
+              >Import</n-button>
+              <n-button @click="mockJson = ''">Clear</n-button>
+            </n-space>
+            <n-alert v-if="mockImportError" type="error">{{ mockImportError }}</n-alert>
+            <n-alert v-if="mockImportSuccess" type="success">{{ mockImportSuccess }}</n-alert>
+          </n-space>
+        </n-card>
+      </n-tab-pane>
+
     </n-tabs>
   </div>
 
@@ -705,13 +770,14 @@ import {
   confirmParsedDraft,
   generateBaseResume,
   getProfile,
+  injectMockProfile,
   replaceSkills,
   saveBaseResume,
   updateProfile as apiUpdateProfile,
   updateUserMe,
   uploadResumePDF,
 } from '../api/client'
-import type { Education, MasterProfile, ParsedProfileDraft, ProficiencyLevel, Project, Skill, TailoredResumeDraft, WorkExperience } from '../api/client'
+import type { ContactInfo, Education, MasterProfile, ParsedProfileDraft, ProficiencyLevel, Project, Skill, TailoredResumeDraft, WorkExperience } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import ProfileChatPanel from '../components/ProfileChatPanel.vue'
 import type { ProfileChatInit } from '../components/ProfileChatPanel.vue'
@@ -825,6 +891,7 @@ function goToView(): void {
 interface EditData {
   full_name: string
   summary: string
+  contact_info: ContactInfo
   work_experiences: WorkExperience[]
   educations: Education[]
   projects: Project[]
@@ -834,6 +901,7 @@ interface EditData {
 const editData = reactive<EditData>({
   full_name: '',
   summary: '',
+  contact_info: {},
   work_experiences: [],
   educations: [],
   projects: [],
@@ -849,6 +917,7 @@ function populateEdit(): void {
   if (!profile.value) return
   editData.full_name = profile.value.full_name
   editData.summary = profile.value.summary ?? ''
+  editData.contact_info = { ...(profile.value.contact_info ?? {}) }
   editData.work_experiences = profile.value.work_experiences.map(e => ({
     ...e,
     description: [...e.description],
@@ -967,8 +1036,18 @@ async function saveEdit(): Promise<void> {
     if (editData.full_name.trim() && editData.full_name !== profile.value?.full_name) {
       await updateUserMe(token(), { full_name: editData.full_name.trim() })
     }
+    const ci = editData.contact_info
+    const contactInfoPayload: ContactInfo = {
+      email: ci.email || undefined,
+      phone: ci.phone || undefined,
+      location: ci.location || undefined,
+      linkedin: ci.linkedin || undefined,
+      github: ci.github || undefined,
+      website: ci.website || undefined,
+    }
     await apiUpdateProfile(token(), {
       summary: editData.summary || undefined,
+      contact_info: contactInfoPayload,
       work_experiences: editData.work_experiences.map(e => ({
         ...e,
         end_date: e.end_date || undefined,
@@ -1185,6 +1264,59 @@ function applyProfilePatch(path: string, updatedValue: unknown): void {
   }
   if (path === 'skills' && Array.isArray(updatedValue)) {
     editData.skills = updatedValue as Skill[]
+  }
+}
+
+// ── dev import ─────────────────────────────────────────────────
+const mockJson = ref('')
+const mockImporting = ref(false)
+const mockImportError = ref('')
+const mockImportSuccess = ref('')
+
+const clearLoading = ref(false)
+const clearError = ref('')
+const clearSuccess = ref('')
+
+async function runClearProfile(): Promise<void> {
+  clearError.value = ''
+  clearSuccess.value = ''
+  clearLoading.value = true
+  try {
+    await apiUpdateProfile(token(), {
+      work_experiences: [],
+      educations: [],
+      projects: [],
+      summary: '',
+    })
+    await replaceSkills(token(), [])
+    await fetchProfile()
+    clearSuccess.value = 'Profile cleared.'
+  } catch (e: unknown) {
+    clearError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    clearLoading.value = false
+  }
+}
+
+async function runMockImport(): Promise<void> {
+  mockImportError.value = ''
+  mockImportSuccess.value = ''
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(mockJson.value)
+  } catch {
+    mockImportError.value = 'Invalid JSON'
+    return
+  }
+  mockImporting.value = true
+  try {
+    const result = await injectMockProfile(token(), JSON.stringify(parsed))
+    profile.value = result
+    mockImportSuccess.value = `Imported: ${result.work_experiences.length} work experiences, ${result.projects.length} projects, ${result.skills.length} skills`
+  } catch (e: unknown) {
+    mockImportError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    mockImporting.value = false
   }
 }
 </script>
