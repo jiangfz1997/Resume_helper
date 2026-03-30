@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator, model_validator
 
 
 class CategoryMatchResult(BaseModel):
@@ -19,11 +19,22 @@ class QualificationResult(BaseModel):
 
 
 class KeywordMatchResult(BaseModel):
-    score: float                          # weighted composite (tech_keywords × 0.8 + preferred × 0.5)
-    tech_keywords: CategoryMatchResult
-    preferred_qualifications: CategoryMatchResult
+    score: float                          # weighted composite (tech_required × 1.0 + tech_preferred × 0.6 + nice_to_have × 0.2)
+    tech_required: CategoryMatchResult
+    tech_preferred: CategoryMatchResult
+    nice_to_have: CategoryMatchResult
     matched_keywords: list[str]
     missing_keywords: list[str]
+
+    @computed_field
+    @property
+    def tech_keywords(self) -> CategoryMatchResult:
+        return self.tech_required
+
+    @computed_field
+    @property
+    def preferred_qualifications(self) -> CategoryMatchResult:
+        return self.nice_to_have
 
 
 class ProficiencyLevel(str, Enum):
@@ -74,6 +85,7 @@ class WorkExperience(BaseModel):
     description: list[str] = Field(default_factory=list)
     ai_summary: Optional[str] = None
     ai_keywords: list[str] = Field(default_factory=list)
+    ai_implied_keywords: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -111,6 +123,7 @@ class Project(BaseModel):
     url: Optional[str] = None
     ai_summary: Optional[str] = None
     ai_keywords: list[str] = Field(default_factory=list)
+    ai_implied_keywords: list[str] = Field(default_factory=list)
 
 
 _PROFICIENCY_ALIASES: dict[str, ProficiencyLevel] = {
@@ -166,8 +179,38 @@ class JobDescription(BaseModel):
     title: str
     company: Optional[str] = None
     qualifications: list[str] = Field(default_factory=list)
-    tech_keywords: list[str] = Field(default_factory=list)
-    preferred_qualifications: list[str] = Field(default_factory=list)
+    tech_required: list[str] = Field(default_factory=list)
+    tech_preferred: list[str] = Field(default_factory=list)
+    nice_to_have: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_fields(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        if "tech_keywords" in data and "tech_required" not in data:
+            data["tech_required"] = data.pop("tech_keywords", [])
+        if "preferred_qualifications" in data and "tech_preferred" not in data:
+            data["nice_to_have"] = data.pop("preferred_qualifications", [])
+            data.setdefault("tech_preferred", [])
+        return data
+
+    @computed_field
+    @property
+    def tech_keywords(self) -> list[str]:
+        return self.tech_required + self.tech_preferred
+
+    @computed_field
+    @property
+    def preferred_qualifications(self) -> list[str]:
+        return self.nice_to_have
+
+
+class TechCoverageItem(BaseModel):
+    keyword: str
+    matched: bool
+    matched_via: Optional[str] = None
+    reason: str
 
 
 class MatchingReport(BaseModel):
@@ -175,8 +218,11 @@ class MatchingReport(BaseModel):
     missing_skills: list[str] = Field(default_factory=list)
     highlighted_experience_indices: list[int] = Field(default_factory=list)
     highlighted_project_indices: list[int] = Field(default_factory=list)
+    topn_experience_indices: list[int] = Field(default_factory=list)
+    topn_project_indices: list[int] = Field(default_factory=list)
     relevance_notes: str = ""
     qualification_details: list[QualificationResult] = Field(default_factory=list)
+    tech_coverage: list[TechCoverageItem] = Field(default_factory=list)
 
 
 class AuditFeedback(BaseModel):
@@ -251,11 +297,13 @@ class MatchingPreview(BaseModel):
     missing_skills: list[str]
     highlighted_experience_indices: list[int] = Field(default_factory=list)
     highlighted_project_indices: list[int] = Field(default_factory=list)
+    topn_experience_indices: list[int] = Field(default_factory=list)
+    topn_project_indices: list[int] = Field(default_factory=list)
     all_experiences: list[WorkExperience]
     all_projects: list[Project]
     relevance_notes: str
     qualification_details: list[QualificationResult] = Field(default_factory=list)
-    kw_detail: Optional[KeywordMatchResult] = None  # keyword breakdown (profile baseline)
+    kw_detail: Optional[KeywordMatchResult] = None
     skill_gap_suggestions: list["SkillGapSuggestion"] = Field(default_factory=list)
 
 
@@ -264,6 +312,8 @@ class GenerateConfirmRequest(BaseModel):
     config: PipelineConfig = Field(default_factory=PipelineConfig)
     template_id: Optional[uuid.UUID] = None
     template_source: Optional[Literal["global", "user"]] = None
+    selected_experience_indices: Optional[list[int]] = None
+    selected_project_indices: Optional[list[int]] = None
 
 
 class ResumeRequest(BaseModel):

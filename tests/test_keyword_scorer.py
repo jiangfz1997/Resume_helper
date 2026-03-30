@@ -16,8 +16,9 @@ def _make_jd(**kwargs) -> JobDescription:
     defaults = dict(
         title="Software Engineer",
         qualifications=[],
-        tech_keywords=[],
-        preferred_qualifications=[],
+        tech_required=[],
+        tech_preferred=[],
+        nice_to_have=[],
     )
     return JobDescription(**{**defaults, **kwargs})
 
@@ -74,78 +75,92 @@ class TestKeywordScorer:
         return KeywordScorer()
 
     def test_full_match_score_is_one(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(tech_keywords=["Python", "FastAPI"])
+        jd = _make_jd(tech_required=["Python", "FastAPI"])
         draft = _make_draft(summary="Built APIs with Python and FastAPI")
         result = scorer.score(draft, jd)
         assert result.score == 1.0
-        assert result.tech_keywords.matched == 2
-        assert result.tech_keywords.missing == []
+        assert result.tech_required.matched == 2
+        assert result.tech_required.missing == []
 
     def test_no_match_score_is_zero(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(tech_keywords=["Kubernetes", "Terraform"])
+        jd = _make_jd(tech_required=["Kubernetes", "Terraform"])
         draft = _make_draft(summary="Worked on web development with Python")
         result = scorer.score(draft, jd)
         assert result.score == 0.0
-        assert result.tech_keywords.matched == 0
+        assert result.tech_required.matched == 0
 
     def test_keyword_found_in_bullet(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(tech_keywords=["microservices"])
+        jd = _make_jd(tech_required=["microservices"])
         draft = _make_draft(bullet_texts=["Designed microservices architecture"])
         result = scorer.score(draft, jd)
-        assert result.tech_keywords.matched == 1
+        assert result.tech_required.matched == 1
 
     def test_keyword_found_in_skills(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(tech_keywords=["Go"])
+        jd = _make_jd(tech_required=["Go"])
         draft = _make_draft(skill_names=["Go"])
         result = scorer.score(draft, jd)
-        assert result.tech_keywords.matched == 1
+        assert result.tech_required.matched == 1
 
     def test_empty_jd_score_is_zero(self, scorer: KeywordScorer) -> None:
         draft = _make_draft(summary="Experienced engineer")
         result = scorer.score(draft, _make_jd())
         assert result.score == 0.0
 
-    def test_required_missing_weighs_more_than_preferred(self, scorer: KeywordScorer) -> None:
+    def test_required_missing_weighs_more_than_nice_to_have(self, scorer: KeywordScorer) -> None:
         jd = _make_jd(
-            tech_keywords=["Kubernetes"],        # weight 0.8, missed
-            preferred_qualifications=["Docker"], # weight 0.5, hit
+            tech_required=["Kubernetes"],  # weight 1.0, missed
+            nice_to_have=["Docker"],       # weight 0.2, hit
         )
         draft = _make_draft(summary="Experience with Docker")
         result = scorer.score(draft, jd)
-        # weighted: (0.8 * 0/1 + 0.5 * 1/1) / (0.8 + 0.5) = 0.5/1.3 ≈ 0.385
-        assert result.score < 0.4
-        assert result.tech_keywords.matched == 0
-        assert result.preferred_qualifications.matched == 1
+        # weighted: (1.0*0/1 + 0.2*1/1) / (1.0+0.2) = 0.2/1.2 ≈ 0.167
+        assert result.score < 0.2
+        assert result.tech_required.matched == 0
+        assert result.nice_to_have.matched == 1
 
     def test_required_fully_covered_boosts_score(self, scorer: KeywordScorer) -> None:
         jd = _make_jd(
-            tech_keywords=["Kubernetes"],          # weight 0.8, hit
-            preferred_qualifications=["Terraform"],# weight 0.5, missed
+            tech_required=["Kubernetes"],  # weight 1.0, hit
+            nice_to_have=["Terraform"],    # weight 0.2, missed
         )
         draft = _make_draft(summary="Experience with Kubernetes")
         result = scorer.score(draft, jd)
-        # weighted: (0.8 * 1/1 + 0.5 * 0/1) / (0.8 + 0.5) = 0.8/1.3 ≈ 0.615
-        assert result.score > 0.6
-        assert result.tech_keywords.matched == 1
+        # weighted: (1.0*1/1 + 0.2*0/1) / (1.0+0.2) = 1.0/1.2 ≈ 0.833
+        assert result.score > 0.8
+        assert result.tech_required.matched == 1
 
     def test_missing_keywords_flat_list(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(tech_keywords=["Python", "AWS"])
+        jd = _make_jd(tech_required=["Python", "AWS"])
         draft = _make_draft(summary="Experienced Python developer")
         result = scorer.score(draft, jd)
         assert "AWS" in result.missing_keywords
         assert "Python" in result.matched_keywords
 
     def test_deduplication_across_same_category(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(tech_keywords=["Python", "python", "PYTHON"])
+        jd = _make_jd(tech_required=["Python", "python", "PYTHON"])
         draft = _make_draft(summary="Python developer")
         result = scorer.score(draft, jd)
-        assert result.tech_keywords.total == 1
-        assert result.tech_keywords.matched == 1
+        assert result.tech_required.total == 1
+        assert result.tech_required.matched == 1
 
-    def test_only_tech_keywords_score_equals_hit_rate(self, scorer: KeywordScorer) -> None:
-        jd = _make_jd(tech_keywords=["FastAPI", "Docker"])
+    def test_only_tech_required_score_equals_hit_rate(self, scorer: KeywordScorer) -> None:
+        jd = _make_jd(tech_required=["FastAPI", "Docker"])
         draft = _make_draft(summary="Built APIs with FastAPI")
         result = scorer.score(draft, jd)
-        assert result.tech_keywords.matched == 1
-        assert result.tech_keywords.total == 2
+        assert result.tech_required.matched == 1
+        assert result.tech_required.total == 2
         assert result.score == round(1 / 2, 4)
+
+    def test_three_tier_weighted_score(self, scorer: KeywordScorer) -> None:
+        jd = _make_jd(
+            tech_required=["Python"],   # weight 1.0, hit
+            tech_preferred=["Redis"],   # weight 0.6, miss
+            nice_to_have=["Kafka"],     # weight 0.2, miss
+        )
+        draft = _make_draft(summary="Python developer")
+        result = scorer.score(draft, jd)
+        # (1.0*1 + 0.6*0 + 0.2*0) / (1.0+0.6+0.2) = 1.0/1.8 ≈ 0.556
+        assert abs(result.score - round(1.0 / 1.8, 4)) < 0.001
+        assert result.tech_required.matched == 1
+        assert result.tech_preferred.matched == 0
+        assert result.nice_to_have.matched == 0

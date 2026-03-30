@@ -58,6 +58,10 @@ class OllamaJDAnalyzer(IJDAnalyzer):
             return cached
 
         result = await self._chain.ainvoke({"jd_text": jd_text})
+        logger.debug(
+            "jd_analyzer | raw result | title=%r req=%s pref=%s n2h=%s",
+            result.get("title"), result.get("tech_required"), result.get("tech_preferred"), result.get("nice_to_have"),
+        )
         jd = JobDescription.model_validate(result)
         _jd_cache.set(key, jd)
         logger.debug("jd_analyzer | cached | key=%.8s", key)

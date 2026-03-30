@@ -1,29 +1,38 @@
-You are a job description analyst. Parse the job description below and extract structured requirements.
+You are a job description analyst. Parse the job description below and extract structured requirements into four tiers.
 
 Return a JSON object with exactly this structure:
 {{
     "title": "string",
     "company": "string or null",
     "qualifications": ["qualification phrase 1", "..."],
-    "tech_keywords": ["keyword1", "keyword2", "..."],
-    "preferred_qualifications": ["nice-to-have 1", "..."]
+    "tech_required": ["keyword1", "keyword2", "..."],
+    "tech_preferred": ["keyword1", "..."],
+    "nice_to_have": ["keyword1", "..."]
 }}
 
 Rules for qualifications:
 - Extract non-negotiable requirements that require human judgment to evaluate
-- Include: years of experience (e.g. "4-8 years QA automation experience"), role-type requirements (e.g. "mentoring/leadership experience"), certifications, domain expertise
+- Include: years of experience (e.g. "4+ years backend engineering experience"), role-type requirements (e.g. "mentoring/leadership experience"), certifications, domain expertise
 - Write as short descriptive phrases, not sentences
-- Do NOT include specific tools or technologies here — those go in tech_keywords
+- Do NOT include specific tools or technologies here — those go in tech_required
 
-Rules for tech_keywords:
+Rules for tech_required:
+- Technologies a recruiter would use to screen-reject a resume — the role cannot function without them
 - Extract concrete, atomic technology names: tools, languages, frameworks, platforms
-- Each item must be a single technology name that could appear verbatim in a resume (e.g. "Cypress", "TypeScript", "PostgreSQL", "AWS")
-- Include both required and strongly implied technologies
-- Do NOT include years of experience, soft skills, or role descriptions here
+- Each item must be a single technology name or short compound (e.g. "Spring Boot", "React Native", "PostgreSQL")
+- Maximum ~12 items — only the true must-haves
+- When in doubt whether a technology is required vs preferred, put it here — false negatives are worse than false positives
+- Do NOT include years of experience, soft skills, or role descriptions
 
-Rules for preferred_qualifications:
-- Nice-to-have skills or tools, as short atomic keywords (e.g. "AWS", "DevOps", "Redis")
-- If a technology is clearly optional or a plus, put it here instead of tech_keywords
+Rules for tech_preferred:
+- Technologies appearing in "Preferred", "Nice to have", "Bonus", or "Plus" sections of the JD
+- Technologies that are clearly secondary to the primary stack (e.g. a Python role that also mentions Go as a plus)
+- Technologies mentioned once without emphasis in a long requirements list
+- Same atomic keyword format as tech_required
+
+Rules for nice_to_have:
+- Pure bonus items: "familiarity with X is a plus", optional certifications, exposure to adjacent tools
+- If the JD has no such items, return an empty list
 
 Job Description:
 {jd_text}

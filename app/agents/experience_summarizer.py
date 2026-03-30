@@ -3,6 +3,7 @@ import json
 import logging
 from pathlib import Path
 
+from app.core.concurrency import get_llm_semaphore
 from app.core.model_factory import get_model_factory
 from app.interfaces.base import IExperienceSummarizer
 from app.models.data_models import ParsedProfileDraft, Project, WorkExperience
@@ -35,7 +36,11 @@ class ExperienceSummarizer(IExperienceSummarizer):
     def __init__(self) -> None:
         self._model = get_model_factory().build("experience_summarizer")
 
-    async def _summarize_one(self, item: WorkExperience | Project) -> tuple[str, list[str]]:
+    async def _summarize_one_guarded(self, item: WorkExperience | Project) -> tuple[str, list[str], list[str]]:
+        async with get_llm_semaphore():
+            return await self._summarize_one(item)
+
+    async def _summarize_one(self, item: WorkExperience | Project) -> tuple[str, list[str], list[str]]:
         prompt = _prompt_text.replace("{item_json}", _item_json(item))
         try:
             response = await self._model.ainvoke(prompt)
@@ -47,30 +52,47 @@ class ExperienceSummarizer(IExperienceSummarizer):
                 )
             else:
                 text = str(raw)
+            # strip markdown code fences if present
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+                text = text.strip()
             data = json.loads(text)
-            return str(data.get("summary", "")), [str(k) for k in data.get("keywords", [])]
+            keywords = [str(k) for k in data.get("keywords", [])]
+            implied = [str(k) for k in data.get("implied_keywords", [])]
+            return str(data.get("summary", "")), keywords, implied
         except Exception as exc:
             label = item.title if isinstance(item, WorkExperience) else item.name
             logger.warning("experience_summarizer | failed for %r: %s", label, exc)
-            return "", []
+            logger.debug("experience_summarizer | raw response: %r", locals().get("text", ""))
+            return "", [], []
 
     async def summarize(self, draft: ParsedProfileDraft) -> ParsedProfileDraft:
         all_items: list[WorkExperience | Project] = list(draft.work_experiences) + list(draft.projects)
         if not all_items:
             return draft
 
-        results = await asyncio.gather(*[self._summarize_one(item) for item in all_items])
+        results = await asyncio.gather(*[self._summarize_one_guarded(item) for item in all_items])
 
         n_exp = len(draft.work_experiences)
         updated_exp: list[WorkExperience] = []
         for i, exp in enumerate(draft.work_experiences):
-            summary, keywords = results[i]
-            updated_exp.append(exp.model_copy(update={"ai_summary": summary or None, "ai_keywords": keywords}))
+            summary, keywords, implied = results[i]
+            updated_exp.append(exp.model_copy(update={
+                "ai_summary": summary or None,
+                "ai_keywords": keywords,
+                "ai_implied_keywords": implied,
+            }))
 
         updated_proj: list[Project] = []
         for j, proj in enumerate(draft.projects):
-            summary, keywords = results[n_exp + j]
-            updated_proj.append(proj.model_copy(update={"ai_summary": summary or None, "ai_keywords": keywords}))
+            summary, keywords, implied = results[n_exp + j]
+            updated_proj.append(proj.model_copy(update={
+                "ai_summary": summary or None,
+                "ai_keywords": keywords,
+                "ai_implied_keywords": implied,
+            }))
 
         logger.info(
             "experience_summarizer | done | exp=%d proj=%d",

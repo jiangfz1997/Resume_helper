@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from app.core.concurrency import get_llm_semaphore
+
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
@@ -103,11 +105,17 @@ class TwoPhaseProfileParser(IProfileParser):
             {k: len(v.splitlines()) for k, v in sections.items()},
         )
 
+        sem = get_llm_semaphore()
+
+        async def _guarded(coro):
+            async with sem:
+                return await coro
+
         exp_result, edu_result, proj_result, skills_result = await asyncio.gather(
-            self._invoke(self._exp_chain, sections.get("experience", ""), _WorkExperienceList),
-            self._invoke(self._edu_chain, sections.get("education", ""), _EducationList),
-            self._invoke(self._proj_chain, sections.get("projects", ""), _ProjectList),
-            self._invoke(self._skills_chain, sections.get("skills", ""), _SkillList),
+            _guarded(self._invoke(self._exp_chain, sections.get("experience", ""), _WorkExperienceList)),
+            _guarded(self._invoke(self._edu_chain, sections.get("education", ""), _EducationList)),
+            _guarded(self._invoke(self._proj_chain, sections.get("projects", ""), _ProjectList)),
+            _guarded(self._invoke(self._skills_chain, sections.get("skills", ""), _SkillList)),
         )
 
         summary_text = sections.get("summary", "")

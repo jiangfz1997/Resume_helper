@@ -50,7 +50,7 @@ async def diagnose(
 
     # ── Scoring ─────────────────────────────────────────────────
     score_result = _scorer.score(request.draft, request.jd)
-    req = score_result.tech_keywords
+    req = score_result.tech_required
 
     # ── Tier 1 (rule-based, no LLM) ─────────────────────────────
     tier1_tasks = tier1_checker.run(request.profile, request.draft)

@@ -306,7 +306,7 @@ class OllamaResumeChatAgent:
 
         try:
             resp = await self._llm.ainvoke([HumanMessage(content=patch_prompt)])
-            raw_resp = str(resp.content)
+            raw_resp = _extract_token(resp.content)
             logger.debug("stream_local_patch | raw_patch_resp=%.500s", raw_resp)
             data = _parse_json(raw_resp)
 
@@ -379,7 +379,7 @@ class OllamaResumeChatAgent:
         path = f"{field}[{idx}]"
         try:
             resp = await self._llm.ainvoke([HumanMessage(content=patch_prompt)])
-            data = _parse_json(str(resp.content))
+            data = _parse_json(_extract_token(resp.content))
             updated = data.get("updated_section")
             diff_summary: str = data.get("diff_summary") or reply_text
 
@@ -493,7 +493,7 @@ class OllamaResumeChatAgent:
             instruction=request.message,
         )
         resp = await self._llm.ainvoke([HumanMessage(content=prompt)])
-        data = _parse_json(str(resp.content))
+        data = _parse_json(_extract_token(resp.content))
 
         reply_text: str = data.get("reply", "Updated the section per your instruction.")
         diff_summary: str = data.get("diff_summary") or reply_text
@@ -546,7 +546,7 @@ class OllamaResumeChatAgent:
             jd_keywords=", ".join(jd_keywords),
         )
         resp = await self._llm.ainvoke([HumanMessage(content=prompt)])
-        data = _parse_json(str(resp.content))
+        data = _parse_json(_extract_token(resp.content))
 
         reply_text: str = data.get("reply", f"Injected '{keyword}' into the section.")
         diff_summary: str = data.get("diff_summary") or reply_text
@@ -597,6 +597,6 @@ class OllamaResumeChatAgent:
             f"User question: {request.message}"
         ))
         resp = await self._llm.ainvoke([system, user_msg])
-        reply_text = str(resp.content).strip()
+        reply_text = _extract_token(resp.content).strip()
         msg = ChatMessage(id=uuid.uuid4(), role="assistant", content=reply_text)
         return ResumeChatResponse(message=msg, patch=None)

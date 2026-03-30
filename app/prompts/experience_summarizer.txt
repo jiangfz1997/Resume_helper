@@ -5,7 +5,13 @@ Input item (JSON):
 
 Rules:
 - summary: 2-3 sentences describing what was built/done, the domain, and the most notable achievement. Focus on technical substance, not soft skills.
-- keywords: list of atomic technology names, tools, frameworks, and domain terms explicitly mentioned or strongly implied. Each keyword should be a single word or short compound (e.g. "kubernetes", "react", "machine learning", "distributed systems"). Maximum 12 keywords.
+- keywords: list of atomic technology names, tools, frameworks, and domain terms that are EXPLICITLY mentioned in the input — do NOT infer or add technologies not written in the text (e.g. do not add "Python" just because "FastAPI" appears). Each keyword should be a single word or short compound (e.g. "kubernetes", "react", "machine learning", "distributed systems"). Maximum 12 keywords.
+- implied_keywords: list of primary languages or runtimes that are STRONGLY implied by the explicit keywords above — one inference level only. Rules:
+  - Only infer the most direct parent language/runtime (FastAPI → Python, Spring Boot → Java, Rails → Ruby, Express/NestJS → Node.js, Next.js → JavaScript, React Native → JavaScript, Laravel → PHP, Flutter → Dart)
+  - Do NOT add a language already present in keywords
+  - Do NOT infer general knowledge (e.g. do NOT add HTML/CSS because React appears, do NOT add C because Go appears)
+  - Do NOT add more than 3 items
+  - Return empty list [] if nothing qualifies
 
 Respond with a JSON object only, no markdown:
-{{"summary": "...", "keywords": ["kw1", "kw2", ...]}}
+{{"summary": "...", "keywords": ["kw1", "kw2", ...], "implied_keywords": ["lang1", ...]}}

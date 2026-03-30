@@ -14,7 +14,7 @@ _CONFIG_PATH = Path(__file__).parent.parent.parent / "agents.yaml"
 
 @dataclass(frozen=True)
 class AgentModelConfig:
-    provider: str          # "ollama" | "google"
+    provider: str          # "ollama" | "google" | "openai"
     model: str
     temperature: float
     # Ollama-specific
@@ -27,6 +27,8 @@ class AgentModelConfig:
     max_retries: int = 3
     timeout: int = 30
     max_tokens: Optional[int] = None
+    # OpenAI-specific
+    openai_api_key_env: str = "OPENAI_API_KEY"
 
 
 class ModelFactory:
@@ -35,6 +37,13 @@ class ModelFactory:
         default_provider: str = raw.get("default_provider", "ollama")
         default_base_url: str = raw.get("base_url", "http://localhost:11434")
         google_defaults: dict = raw.get("google", {})
+        openai_defaults: dict = raw.get("openai", {})
+
+        # If LLM_PROVIDER=openai, all agents whose provider would be "google"
+        # are transparently rerouted to OpenAI using the openai.agents model map.
+        self._active_provider: str = os.environ.get("LLM_PROVIDER", "").lower() or default_provider
+        self._openai_agent_models: dict[str, str] = openai_defaults.get("agents", {})
+        self._openai_defaults = openai_defaults
 
         self._configs: dict[str, AgentModelConfig] = {}
         for name, params in (raw.get("agents") or {}).items():
@@ -53,13 +62,16 @@ class ModelFactory:
                 max_retries=int(google_defaults.get("max_retries", 3)),
                 timeout=int(google_defaults.get("timeout", 30)),
                 max_tokens=params.get("max_tokens"),
+                openai_api_key_env=openai_defaults.get("api_key_env", "OPENAI_API_KEY"),
             )
 
     def build(self, agent_name: str, max_tokens_override: Optional[int] = None) -> Runnable:
-        cfg = self._get(agent_name)
+        cfg = self._resolve(agent_name)
         if max_tokens_override is not None:
             from dataclasses import replace
             cfg = replace(cfg, max_tokens=max_tokens_override)
+        if cfg.provider == "openai":
+            return self._build_openai(cfg)
         if cfg.provider == "google":
             return self._build_google(cfg)
         return self._build_ollama(cfg)
@@ -70,10 +82,33 @@ class ModelFactory:
         Required when the caller needs to call with_structured_output(),
         which is not available on RunnableRetry.
         """
-        cfg = self._get(agent_name)
+        cfg = self._resolve(agent_name)
+        if cfg.provider == "openai":
+            return self._build_openai_raw(cfg)
         if cfg.provider == "google":
             return self._build_google_raw(cfg)
         return self._build_ollama(cfg)
+
+    # ── provider resolution ─────────────────────────────────────────────────
+
+    def _resolve(self, agent_name: str) -> AgentModelConfig:
+        """Return config, swapping to OpenAI when LLM_PROVIDER=openai."""
+        cfg = self._get(agent_name)
+        if self._active_provider == "openai" and cfg.provider == "google":
+            from dataclasses import replace
+            openai_model = self._openai_agent_models.get(agent_name)
+            if not openai_model:
+                raise KeyError(
+                    f"LLM_PROVIDER=openai but no model mapping found for agent {agent_name!r}. "
+                    f"Add it under openai.agents in agents.yaml."
+                )
+            timeout = int(self._openai_defaults.get("timeout", 60))
+            max_retries = int(self._openai_defaults.get("max_retries", 3))
+            cfg = replace(cfg, provider="openai", model=openai_model,
+                          timeout=timeout, max_retries=max_retries)
+        return cfg
+
+    # ── builders ────────────────────────────────────────────────────────────
 
     def _build_ollama(self, cfg: AgentModelConfig) -> BaseChatModel:
         from langchain_ollama import ChatOllama
@@ -130,6 +165,38 @@ class ModelFactory:
             )
         except ImportError:
             return model
+
+    def _build_openai_raw(self, cfg: AgentModelConfig) -> BaseChatModel:
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-openai is not installed. "
+                "Run: pip install langchain-openai"
+            ) from exc
+
+        api_key = os.environ.get(cfg.openai_api_key_env)
+        if not api_key:
+            raise RuntimeError(
+                f"OpenAI API key not found. Set the {cfg.openai_api_key_env!r} environment variable."
+            )
+
+        model_name = os.environ.get(cfg.model) or cfg.model
+        kwargs: dict = {
+            "model": model_name,
+            "openai_api_key": api_key,
+            "temperature": cfg.temperature,
+            "max_retries": cfg.max_retries,
+            "timeout": cfg.timeout,
+        }
+        if cfg.max_tokens is not None:
+            kwargs["max_tokens"] = cfg.max_tokens
+
+        return ChatOpenAI(**kwargs)
+
+    def _build_openai(self, cfg: AgentModelConfig) -> Runnable:
+        # ChatOpenAI has built-in retry via max_retries; no additional wrapper needed.
+        return self._build_openai_raw(cfg)
 
     def _get(self, agent_name: str) -> AgentModelConfig:
         cfg = self._configs.get(agent_name)

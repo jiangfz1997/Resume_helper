@@ -22,11 +22,32 @@ google:
   max_retries: 3
   timeout: 30
 
+# OpenAI fallback — activated by setting env: LLM_PROVIDER=openai
+# api_key_env defaults to OPENAI_API_KEY
+openai:
+  api_key_env: OPENAI_API_KEY
+  max_retries: 3
+  timeout: 60
+  agents:
+    jd_analyzer:           OPENAI_FAST_MODEL
+    skill_matcher:         OPENAI_FAST_MODEL
+    resume_tailor:         OPENAI_SMART_MODEL
+    resume_chat_json:      OPENAI_FAST_MODEL
+    resume_chat_stream:    OPENAI_FAST_MODEL
+    section_detector:      OPENAI_FAST_MODEL
+    section_parser:        OPENAI_FAST_MODEL
+    diagnostic_analyzer:   OPENAI_SMART_MODEL
+    batch_verifier:        OPENAI_FAST_MODEL
+    micro_validator:       OPENAI_FAST_MODEL
+    chat_intent_router:    OPENAI_FAST_MODEL
+    experience_summarizer: OPENAI_FAST_MODEL
+    top_n_selector:        OPENAI_FAST_MODEL
+
 agents:
   jd_analyzer:
     model: GOOGLE_FLASH_MODEL
-    temperature: 0.3
-    thinking_level: low
+    temperature: 0.1
+    thinking_level: medium
 
   skill_matcher:
     model: GOOGLE_FLASH_MODEL
@@ -90,13 +111,13 @@ agents:
     thinking_level: minimal
 
   experience_summarizer:
-    model: GOOGLE_FLASH_LITE_MODEL
+    model: GOOGLE_FLASH_MODEL
     temperature: 0.0
-    max_tokens: 512
+    max_tokens: 2048
     thinking_level: low
 
   top_n_selector:
     model: GOOGLE_FLASH_MODEL
-    temperature: 0.1
-    max_tokens: 512
+    temperature: 0.0
+    max_tokens: 4096
     thinking_level: low

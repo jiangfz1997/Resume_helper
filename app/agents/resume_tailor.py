@@ -84,11 +84,13 @@ class OllamaResumeTailor:
         current_title: str,
         template_id: Optional[object] = None,
         template_source: Optional[str] = None,
+        exp_indices: Optional[list[int]] = None,
+        proj_indices: Optional[list[int]] = None,
     ) -> TailoredResumeDraft:
         profile_json = _build_profile_json(
             profile,
-            matching_report.highlighted_experience_indices,
-            matching_report.highlighted_project_indices,
+            exp_indices if exp_indices is not None else matching_report.topn_experience_indices,
+            proj_indices if proj_indices is not None else matching_report.topn_project_indices,
         )
         result = await self._chain.ainvoke({
             "current_title": current_title,

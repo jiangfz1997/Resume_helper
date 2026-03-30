@@ -70,12 +70,12 @@
           <n-tooltip trigger="hover" placement="bottom">
             <template #trigger>
               <div class="score-chip" :class="scoreChipClass(kwPct)">
-                <span class="sc-label">Keywords</span>
+                <span class="sc-label">ATS Coverage</span>
                 <span class="sc-value">{{ kwPct }}%</span>
                 <span class="sc-status">{{ scoreStatusText(kwPct) }}</span>
               </div>
             </template>
-            Weighted keyword match: tech keywords (0.8×) + preferred qualifications (0.5×). Target ≥ 70%.
+            Literal keyword match simulating ATS scanners (required 1.0× + preferred 0.6× + nice-to-have 0.2×). Low score means the resume text is missing exact keyword strings — add them explicitly. Target ≥ 70%.
           </n-tooltip>
         </div>
 
@@ -202,9 +202,9 @@
                     <div style="display:flex;align-items:center;justify-content:space-between">
                       <n-tooltip trigger="hover">
                         <template #trigger>
-                          <n-text style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.4px;cursor:help">Keywords</n-text>
+                          <n-text style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.4px;cursor:help">ATS Coverage</n-text>
                         </template>
-                        Weighted keyword match: tech keywords (0.8×) + preferred qualifications (0.5×).
+                        Literal keyword scan simulating ATS systems. Shows which exact strings appear in your resume text. Low score = missing explicit keywords, not missing skills. Required 1.0x, Preferred 0.6x, Nice-to-have 0.2x.
                       </n-tooltip>
                       <n-text :style="`font-size:12px;font-weight:700;color:${kwPct >= 70 ? '#18a058' : kwPct >= 50 ? '#f0a020' : '#d03050'}`">
                         {{ kwPct }}%
@@ -212,26 +212,38 @@
                     </div>
                   </template>
                   <n-space vertical size="small">
-                    <template v-if="activeKwDetail.tech_keywords.total > 0">
-                      <n-text style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.3px">Tech Keywords</n-text>
-                      <n-space size="small" style="flex-wrap:wrap;margin-bottom:4px">
-                        <n-tag v-for="kw in techKwMatchedList" :key="kw" type="success" size="small">{{ kw }}</n-tag>
-                        <n-tag v-for="kw in activeKwDetail.tech_keywords.missing" :key="kw" type="error" size="small">{{ kw }}</n-tag>
+                    <!-- Matched (flat across all tiers) -->
+                    <template v-if="activeKwDetail.matched_keywords.length > 0">
+                      <n-text style="font-size:10px;color:#18a058;text-transform:uppercase;letter-spacing:0.3px">Matched</n-text>
+                      <n-space size="small" style="flex-wrap:wrap;margin-bottom:6px">
+                        <n-tag v-for="kw in activeKwDetail.matched_keywords" :key="'m-' + kw" type="success" size="small">{{ kw }}</n-tag>
                       </n-space>
                     </template>
-                    <template v-if="activeKwDetail.preferred_qualifications.total > 0">
-                      <n-text style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.3px">Preferred</n-text>
-                      <n-space size="small" style="flex-wrap:wrap;margin-bottom:4px">
-                        <n-tag v-for="kw in preferredMatchedList" :key="kw" type="success" size="small">{{ kw }}</n-tag>
-                        <n-tag v-for="kw in activeKwDetail.preferred_qualifications.missing" :key="kw" type="warning" size="small">{{ kw }}</n-tag>
+                    <!-- Missing per tier -->
+                    <template v-if="activeKwDetail.tech_required?.missing?.length > 0">
+                      <n-text style="font-size:10px;color:#d03050;text-transform:uppercase;letter-spacing:0.3px">Missing Required</n-text>
+                      <n-space size="small" style="flex-wrap:wrap;margin-bottom:6px">
+                        <n-tag v-for="kw in activeKwDetail.tech_required.missing" :key="'req-x-' + kw" type="error" size="small">{{ kw }}</n-tag>
                       </n-space>
                     </template>
-                    <n-text v-if="activeKwDetail.tech_keywords.total === 0 && activeKwDetail.preferred_qualifications.total === 0" depth="3" style="font-size:12px">— no keywords extracted —</n-text>
+                    <template v-if="activeKwDetail.tech_preferred?.missing?.length > 0">
+                      <n-text style="font-size:10px;color:#f0a020;text-transform:uppercase;letter-spacing:0.3px">Missing Preferred</n-text>
+                      <n-space size="small" style="flex-wrap:wrap;margin-bottom:6px">
+                        <n-tag v-for="kw in activeKwDetail.tech_preferred.missing" :key="'pref-x-' + kw" type="warning" size="small">{{ kw }}</n-tag>
+                      </n-space>
+                    </template>
+                    <template v-if="activeKwDetail.nice_to_have?.missing?.length > 0">
+                      <n-text style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.3px">Missing Nice-to-have</n-text>
+                      <n-space size="small" style="flex-wrap:wrap;margin-bottom:4px">
+                        <n-tag v-for="kw in activeKwDetail.nice_to_have.missing" :key="'n2h-x-' + kw" size="small">{{ kw }}</n-tag>
+                      </n-space>
+                    </template>
+                    <n-text v-if="!activeKwDetail.tech_required || activeKwDetail.tech_required.total === 0" depth="3" style="font-size:12px">— no keywords extracted —</n-text>
                   </n-space>
                 </n-card>
 
                 <!-- Skill Gap Suggestions -->
-                <n-card v-if="gapSuggestions.length > 0" size="small" style="background:#1a1a1a">
+                <n-card v-if="gapSuggestions.length > 0" size="small" style="background:#1a1a1a;margin-bottom:10px">
                   <template #header>
                     <n-tooltip trigger="hover">
                       <template #trigger>
@@ -252,12 +264,86 @@
                     </div>
                   </n-space>
                 </n-card>
+
+                <!-- Experience Selection -->
+                <n-card size="small" style="background:#1a1a1a;margin-bottom:10px" v-if="preview && preview.all_experiences.length">
+                  <template #header>
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <n-text style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.4px">Experiences</n-text>
+                      <n-text depth="3" style="font-size:11px">{{ selectedExpIndices.length }} selected</n-text>
+                    </div>
+                  </template>
+                  <n-space vertical size="small">
+                    <div
+                      v-for="{ exp, idx } in sortedExpList"
+                      :key="idx"
+                      style="display:flex;align-items:flex-start;gap:8px;padding:4px 0;border-bottom:1px solid #2a2a2a"
+                    >
+                      <n-checkbox
+                        :checked="selectedExpIndices.includes(idx)"
+                        @update:checked="(v: boolean) => { if (v) selectedExpIndices.push(idx); else selectedExpIndices.splice(selectedExpIndices.indexOf(idx), 1) }"
+                        style="flex-shrink:0;margin-top:2px"
+                      />
+                      <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                          <n-text style="font-size:12px;font-weight:600">{{ exp.title }}</n-text>
+                          <n-text depth="3" style="font-size:11px">@ {{ exp.company }}</n-text>
+                          <n-tag v-if="preview.topn_experience_indices.includes(idx)" size="tiny" type="info">AI pick</n-tag>
+                        </div>
+                        <n-text depth="3" style="font-size:11px">{{ exp.start_date }} – {{ exp.end_date ?? 'present' }}</n-text>
+                      </div>
+                    </div>
+                  </n-space>
+                </n-card>
+
+                <!-- Project Selection -->
+                <n-card size="small" style="background:#1a1a1a;margin-bottom:12px" v-if="preview && preview.all_projects.length">
+                  <template #header>
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <n-text style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.4px">Projects</n-text>
+                      <n-text depth="3" style="font-size:11px">{{ selectedProjIndices.length }} selected</n-text>
+                    </div>
+                  </template>
+                  <n-space vertical size="small">
+                    <div
+                      v-for="{ proj, idx } in sortedProjList"
+                      :key="idx"
+                      style="display:flex;align-items:flex-start;gap:8px;padding:4px 0;border-bottom:1px solid #2a2a2a"
+                    >
+                      <n-checkbox
+                        :checked="selectedProjIndices.includes(idx)"
+                        @update:checked="(v: boolean) => { if (v) selectedProjIndices.push(idx); else selectedProjIndices.splice(selectedProjIndices.indexOf(idx), 1) }"
+                        style="flex-shrink:0;margin-top:2px"
+                      />
+                      <div style="flex:1;min-width:0">
+                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                          <n-text style="font-size:12px;font-weight:600">{{ proj.name }}</n-text>
+                          <n-tag v-if="preview.topn_project_indices.includes(idx)" size="tiny" type="info">AI pick</n-tag>
+                        </div>
+                        <n-text depth="3" style="font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block;max-width:200px">{{ proj.description }}</n-text>
+                      </div>
+                    </div>
+                  </n-space>
+                </n-card>
+
+                <!-- Regenerate button (shown after first auto-generate) -->
+                <n-button
+                  type="primary"
+                  block
+                  :loading="draftLoading"
+                  :disabled="selectedExpIndices.length === 0 && selectedProjIndices.length === 0"
+                  @click="runGenerate"
+                  style="margin-top:4px"
+                >
+                  {{ draftLoading ? 'Generating...' : 'Regenerate with Selection' }}
+                </n-button>
+                <n-alert v-if="generateError" type="error" style="margin-top:8px;font-size:12px">{{ generateError }}</n-alert>
               </div>
             </n-tab-pane>
 
             <!-- Content tab -->
-            <n-tab-pane name="content" tab="Content" :disabled="draftLoading" style="flex: 1; overflow-y: auto; padding: 0">
-              <div style="padding: 8px 0">
+            <n-tab-pane name="content" tab="Content" :disabled="draftLoading || !draft" style="flex: 1; overflow-y: auto; padding: 0">
+              <div v-if="draft" style="padding: 8px 0">
 
                 <!-- Section visibility -->
                 <n-card size="small" title="Sections" style="margin-bottom: 10px">
@@ -708,6 +794,8 @@ import type {
   ResumePatch,
   SkillGapSuggestion,
   TailoredResumeDraft,
+  WorkExperience,
+  Project,
 } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { useRoute } from 'vue-router'
@@ -723,6 +811,10 @@ const token = () => auth.token!
 const currentSessionId = ref<string | null>(null)
 const userName = ref('')
 const layoutSettings = ref<LayoutSettings>(defaultLayoutSettings())
+
+// selected experience/project indices for generation (user-editable)
+const selectedExpIndices = ref<number[]>([])
+const selectedProjIndices = ref<number[]>([])
 
 type Stage = 'jd' | 'result'
 const stage = ref<Stage>('jd')
@@ -778,18 +870,28 @@ const activeKwDetail = computed<KeywordMatchResult | null>(
   () => kwDetail.value ?? preview.value?.kw_detail ?? null
 )
 
-// Computed matched lists per category (total minus missing)
-const techKwMatchedList = computed<string[]>(() => {
-  const d = activeKwDetail.value
-  if (!d) return []
-  const missingSet = new Set(d.tech_keywords.missing)
-  return (sessionJd.value?.tech_keywords ?? []).filter(k => !missingSet.has(k))
+
+// Sorted experience/project lists: selected first, then unselected
+const sortedExpList = computed<Array<{ exp: WorkExperience; idx: number }>>(() => {
+  if (!preview.value) return []
+  const selected = preview.value.all_experiences
+    .map((exp, i) => ({ exp, idx: i }))
+    .filter(e => selectedExpIndices.value.includes(e.idx))
+  const rest = preview.value.all_experiences
+    .map((exp, i) => ({ exp, idx: i }))
+    .filter(e => !selectedExpIndices.value.includes(e.idx))
+  return [...selected, ...rest]
 })
-const preferredMatchedList = computed<string[]>(() => {
-  const d = activeKwDetail.value
-  if (!d) return []
-  const missingSet = new Set(d.preferred_qualifications.missing)
-  return (sessionJd.value?.preferred_qualifications ?? []).filter(k => !missingSet.has(k))
+
+const sortedProjList = computed<Array<{ proj: Project; idx: number }>>(() => {
+  if (!preview.value) return []
+  const selected = preview.value.all_projects
+    .map((proj, j) => ({ proj, idx: j }))
+    .filter(p => selectedProjIndices.value.includes(p.idx))
+  const rest = preview.value.all_projects
+    .map((proj, j) => ({ proj, idx: j }))
+    .filter(p => !selectedProjIndices.value.includes(p.idx))
+  return [...selected, ...rest]
 })
 
 async function runAnalyze(): Promise<void> {
@@ -797,49 +899,58 @@ async function runAnalyze(): Promise<void> {
   generateError.value = ''
   analyzeLoading.value = true
   try {
-    // Phase 1: analyze JD — show result stage immediately after this completes
     const data = await analyzeJD(token(), jdText.value)
     currentSessionId.value = data.session_id
     preview.value = data
+    selectedExpIndices.value = [...(data.topn_experience_indices ?? [])]
+    selectedProjIndices.value = [...(data.topn_project_indices ?? [])]
     stage.value = 'result'
     leftActiveTab.value = 'match'
     analyzeLoading.value = false
 
-    // Phase 2: generate draft in the background
-    draftLoading.value = true
-    try {
-      const draftData = await confirmGenerate(
-        token(),
-        data.session_id,
-        { ...config },
-        undefined,
-        undefined,
-      )
-      draft.value = {
-        show_summary: true,
-        show_experiences: true,
-        show_education: true,
-        show_projects: true,
-        show_skills: true,
-        custom_sections: [],
-        ...draftData,
-        contact_info: draftData.contact_info ?? {},
-      }
-      leftActiveTab.value = 'content'
-      try {
-        const detail = await getSession(token(), data.session_id)
-        if (detail.kw_detail) kwDetail.value = detail.kw_detail
-        if (detail.jd) sessionJd.value = detail.jd
-      } catch { /* non-critical */ }
-      runDiagnose()
-    } catch (e) {
-      generateError.value = (e as Error).message
-    } finally {
-      draftLoading.value = false
-    }
+    // auto-generate with AI pick
+    await runGenerate()
   } catch (e) {
     analyzeError.value = (e as Error).message
     analyzeLoading.value = false
+  }
+}
+
+async function runGenerate(): Promise<void> {
+  if (!currentSessionId.value) return
+  generateError.value = ''
+  draftLoading.value = true
+  try {
+    const draftData = await confirmGenerate(
+      token(),
+      currentSessionId.value,
+      { ...config },
+      undefined,
+      undefined,
+      selectedExpIndices.value,
+      selectedProjIndices.value,
+    )
+    draft.value = {
+      show_summary: true,
+      show_experiences: true,
+      show_education: true,
+      show_projects: true,
+      show_skills: true,
+      custom_sections: [],
+      ...draftData,
+      contact_info: draftData.contact_info ?? {},
+    }
+    leftActiveTab.value = 'content'
+    try {
+      const detail = await getSession(token(), currentSessionId.value)
+      if (detail.kw_detail) kwDetail.value = detail.kw_detail
+      if (detail.jd) sessionJd.value = detail.jd
+    } catch { /* non-critical */ }
+    runDiagnose()
+  } catch (e) {
+    generateError.value = (e as Error).message
+  } finally {
+    draftLoading.value = false
   }
 }
 
@@ -877,6 +988,8 @@ async function loadSessionById(sid: string): Promise<void> {
         ...detail.tailored_draft,
         contact_info: detail.tailored_draft.contact_info ?? {},
       }
+      const topnExp = detail.highlighted_experience_indices ?? []
+      const topnProj = detail.highlighted_project_indices ?? []
       preview.value = {
         session_id: sid,
         match_score: detail.match_score ?? 0,
@@ -884,14 +997,18 @@ async function loadSessionById(sid: string): Promise<void> {
         company: detail.company,
         matched_skills: detail.matched_skills ?? [],
         missing_skills: detail.missing_skills ?? [],
-        highlighted_experience_indices: detail.highlighted_experience_indices ?? [],
-        highlighted_project_indices: detail.highlighted_project_indices ?? [],
+        highlighted_experience_indices: topnExp,
+        highlighted_project_indices: topnProj,
+        topn_experience_indices: topnExp,
+        topn_project_indices: topnProj,
         all_experiences: detail.all_experiences ?? [],
         all_projects: detail.all_projects ?? [],
         relevance_notes: detail.relevance_notes ?? '',
         qualification_details: detail.qualification_details ?? [],
         kw_detail: detail.kw_detail,
       }
+      selectedExpIndices.value = [...topnExp]
+      selectedProjIndices.value = [...topnProj]
       if (detail.kw_detail) kwDetail.value = detail.kw_detail
       if (detail.jd) sessionJd.value = detail.jd
       stage.value = 'result'
@@ -1299,6 +1416,8 @@ function reset(): void {
   draft.value = null
   draftLoading.value = false
   generateError.value = ''
+  selectedExpIndices.value = []
+  selectedProjIndices.value = []
   if (currentSessionId.value) {
     try { localStorage.removeItem(_DIAG_PREFIX + currentSessionId.value) } catch { /* ignore */ }
   }

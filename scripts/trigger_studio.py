@@ -3,7 +3,7 @@ Trigger local LangGraph Studio pipelines via the LangGraph SDK.
 
 Usage:
     python scripts/trigger_studio.py --graph profile_parse
-    python scripts/trigger_studio.py --graph v2_resume
+    python scripts/trigger_studio.py --graph resume_pipeline
     python scripts/trigger_studio.py --graph all
 
 Prerequisites:
@@ -115,8 +115,9 @@ SAMPLE_V2_INPUT: dict[str, Any] = {
         "title": "Senior Backend Engineer",
         "company": "TechCorp",
         "qualifications": ["5+ years backend engineering experience", "distributed systems experience"],
-        "tech_keywords": ["Python", "REST API", "PostgreSQL", "microservices", "Docker", "Kubernetes", "CI/CD"],
-        "preferred_qualifications": ["Go", "Kafka", "AWS"],
+        "tech_required": ["Python", "REST API", "PostgreSQL", "microservices", "Docker"],
+        "tech_preferred": ["Kubernetes", "CI/CD"],
+        "nice_to_have": ["Go", "Kafka", "AWS"],
     },
     "matching_report": {
         "matched_skills": ["Python", "Docker", "PostgreSQL", "REST API", "microservices", "CI/CD"],
@@ -195,7 +196,7 @@ async def run_graph(graph_name: str, input_data: dict[str, Any]) -> None:
 async def main(graphs: list[str]) -> None:
     inputs: dict[str, dict[str, Any]] = {
         "profile_parse": {"raw_text": SAMPLE_RESUME_TEXT, "draft": None},
-        "v2_resume": SAMPLE_V2_INPUT,
+        "resume_pipeline": SAMPLE_V2_INPUT,
     }
 
     for graph_name in graphs:
@@ -214,10 +215,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--graph",
         default="all",
-        choices=["profile_parse", "v2_resume", "all"],
+        choices=["profile_parse", "resume_pipeline", "all"],
         help="Which graph to trigger (default: all)",
     )
     args = parser.parse_args()
 
-    target = list({"profile_parse": ["profile_parse"], "v2_resume": ["v2_resume"], "all": ["profile_parse", "v2_resume"]}[args.graph])
+    target = list({"profile_parse": ["profile_parse"], "resume_pipeline": ["resume_pipeline"], "all": ["profile_parse", "resume_pipeline"]}[args.graph])
     asyncio.run(main(target))

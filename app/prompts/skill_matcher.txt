@@ -10,6 +10,10 @@ Return a JSON object with exactly this structure:
     "qualification_details": [
         {{"item": "<exact text of qualification from JD>", "matched": true, "reason": "<one short sentence citing evidence or explaining the gap, max 15 words>"}},
         {{"item": "...", "matched": false, "reason": "..."}}
+    ],
+    "tech_coverage": [
+        {{"keyword": "Python", "matched": true, "matched_via": "implied", "reason": "FastAPI usage implies Python proficiency"}},
+        {{"keyword": "Kubernetes", "matched": false, "matched_via": null, "reason": "No evidence of Kubernetes in profile"}}
     ]
 }}
 
@@ -52,6 +56,14 @@ Rules for qualification_details:
 - For experience-year requirements, estimate total relevant years from the candidate's work history dates and role types
 - reason must cite the specific evidence (e.g. "3 years QA at Company X") or name the gap ("No evidence of X in profile")
 - Keep reason under 15 words, no filler phrases
+
+Rules for tech_coverage:
+- Evaluate every keyword in jd.tech_required — do not skip any
+- matched_via must be one of: "explicit" (directly listed in skills or bullets), "implied" (framework/library implies the language — e.g. FastAPI implies Python, Spring Boot implies Java), "project" (evidence only in projects, no work experience)
+- matched_via is null when matched is false
+- reason must be 12 words or fewer; cite the specific evidence or name the gap
+- Semantic inference is preferred over literal matching: if the candidate used Django, Python is matched_via="implied"
+- Do NOT include tech_preferred or nice_to_have keywords in this list — only tech_required items
 
 Rules for relevance_notes:
 - Assess fit holistically: consider role alignment, years and type of experience, and skill coverage

@@ -12,13 +12,20 @@ from app.models.data_models import (
 )
 
 _KW_WEIGHT: dict[str, float] = {
-    "tech_keywords": 0.8,
-    "preferred_qualifications": 0.5,
+    "tech_required": 1.0,
+    "tech_preferred": 0.6,
+    "nice_to_have": 0.2,
 }
 
 
 def _keyword_in_text(keyword: str, text: str) -> bool:
-    pattern = re.compile(rf"\b{re.escape(keyword)}\b", re.IGNORECASE)
+    escaped = re.escape(keyword)
+    # \b doesn't work for keywords ending in non-word chars (C++, C#, .NET)
+    # Use lookahead/lookbehind with \W or start/end of string instead
+    pattern = re.compile(
+        rf"(?<!\w){escaped}(?!\w)",
+        re.IGNORECASE,
+    )
     return bool(pattern.search(text))
 
 
@@ -78,10 +85,12 @@ def _extract_profile_text(profile: MasterProfile) -> str:
     for exp in profile.work_experiences:
         parts.append(exp.title)
         parts.extend(exp.description)
+        parts.extend(exp.ai_keywords)
     for proj in profile.projects:
         parts.append(proj.description)
         parts.extend(proj.bullets)
         parts.extend(proj.tech_stack)
+        parts.extend(proj.ai_keywords)
     for skill in profile.skills:
         parts.append(skill.name)
     return " ".join(parts)
@@ -89,8 +98,9 @@ def _extract_profile_text(profile: MasterProfile) -> str:
 
 def _build_result(text: str, jd: JobDescription) -> KeywordMatchResult:
     kw_categories = {
-        "tech_keywords": _dedup(jd.tech_keywords),
-        "preferred_qualifications": _dedup(jd.preferred_qualifications),
+        "tech_required": _dedup(jd.tech_required),
+        "tech_preferred": _dedup(jd.tech_preferred),
+        "nice_to_have": _dedup(jd.nice_to_have),
     }
 
     kw_results = {name: _match_category(kws, text) for name, kws in kw_categories.items()}
@@ -114,8 +124,9 @@ def _build_result(text: str, jd: JobDescription) -> KeywordMatchResult:
 
     return KeywordMatchResult(
         score=final_score,
-        tech_keywords=kw_results["tech_keywords"],
-        preferred_qualifications=kw_results["preferred_qualifications"],
+        tech_required=kw_results["tech_required"],
+        tech_preferred=kw_results["tech_preferred"],
+        nice_to_have=kw_results["nice_to_have"],
         matched_keywords=all_matched,
         missing_keywords=all_missing,
     )

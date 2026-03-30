@@ -114,6 +114,17 @@ async def confirm_and_draft(
         request.config,
     )
 
+    exp_indices = (
+        request.selected_experience_indices
+        if request.selected_experience_indices is not None
+        else matching_report.topn_experience_indices
+    )
+    proj_indices = (
+        request.selected_project_indices
+        if request.selected_project_indices is not None
+        else matching_report.topn_project_indices
+    )
+
     try:
         draft = await OllamaResumeTailor().tailor(
             profile=profile,
@@ -122,6 +133,8 @@ async def confirm_and_draft(
             current_title=current_title,
             template_id=template_id,
             template_source=template_source,
+            exp_indices=exp_indices,
+            proj_indices=proj_indices,
         )
         await session_repo.update_draft(uuid.UUID(request.session_id), draft)
         logger.info("confirm_and_draft | done | user_id=%s", user_id)

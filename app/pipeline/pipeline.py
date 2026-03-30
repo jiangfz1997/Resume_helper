@@ -2,7 +2,6 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import date
 from typing import Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -10,6 +9,7 @@ from langgraph.graph import END, StateGraph
 from app.interfaces.base import IJDAnalyzer, ISkillMatcher, ITopNSelector
 from app.models.data_models import (
     JobDescription,
+    KeywordMatchResult,
     MasterProfile,
     MatchingPreview,
     MatchingReport,
@@ -19,6 +19,7 @@ from app.models.data_models import (
 )
 from langsmith import traceable
 
+from app.core.date_utils import parse_ym
 from app.services.keyword_scorer import KeywordScorer
 from app.services.profile_manager import ProfileManager
 
@@ -31,19 +32,6 @@ _DEFAULT_MIN_PROJ = 1
 _INTERN_KEYWORDS = {"intern", "internship", "co-op", "coop", "co op", "student"}
 
 
-def _parse_ym(s: str) -> date:
-    s = s.strip().lower()
-    if not s or s in ("present", "current", "now", ""):
-        return date.today()
-    parts = s.split("-")
-    try:
-        if len(parts) >= 2:
-            return date(int(parts[0]), int(parts[1]), 1)
-        return date(int(parts[0]), 1, 1)
-    except (ValueError, IndexError):
-        return date.today()
-
-
 def _calc_ft_experience_years(experiences: list) -> float:
     total_days = 0
     for exp in experiences:
@@ -51,8 +39,8 @@ def _calc_ft_experience_years(experiences: list) -> float:
         if any(kw in title_lower for kw in _INTERN_KEYWORDS):
             continue
         try:
-            start = _parse_ym(exp.start_date or "")
-            end = _parse_ym(exp.end_date or "present")
+            start = parse_ym(exp.start_date or "")
+            end = parse_ym(exp.end_date or "present")
             days = (end - start).days
             if days > 0:
                 total_days += days
@@ -87,6 +75,31 @@ def _validate_qualification_years(
     if not changed:
         return report
     return report.model_copy(update={"qualification_details": corrected})
+
+
+def _tech_req_score(report: MatchingReport, jd: JobDescription) -> float:
+    if not jd.tech_required:
+        return 1.0
+    if report.tech_coverage:
+        score = sum(
+            (0.8 if item.matched_via == "implied" else 1.0)
+            for item in report.tech_coverage
+            if item.matched
+        )
+        return min(score / len(jd.tech_required), 1.0)
+    req_set = {k.lower() for k in jd.tech_required}
+    matched_set = {s.lower() for s in report.matched_skills}
+    return len(req_set & matched_set) / len(req_set)
+
+
+def _tech_pref_score(kw_result: KeywordMatchResult) -> float:
+    cat = kw_result.tech_preferred
+    return cat.matched / cat.total if cat.total > 0 else 1.0
+
+
+def _nice_score(kw_result: KeywordMatchResult) -> float:
+    cat = kw_result.nice_to_have
+    return cat.matched / cat.total if cat.total > 0 else 1.0
 
 
 @dataclass
@@ -154,8 +167,8 @@ class ResumePipeline:
         logger.debug("node:analyze_jd | jd_text_len=%d", len(state["jd_text"]))
         jd = await self._jd_analyzer.analyze(state["jd_text"])
         logger.debug(
-            "node:analyze_jd | done | title=%s hard_reqs=%d keywords=%d",
-            jd.title, len(jd.qualifications), len(jd.tech_keywords),
+            "node:analyze_jd | done | title=%s hard_reqs=%d req=%d pref=%d",
+            jd.title, len(jd.qualifications), len(jd.tech_required), len(jd.tech_preferred),
         )
         return {"jd": jd}
 
@@ -196,6 +209,10 @@ class ResumePipeline:
             "node:match_skills | done | matched=%d missing=%d",
             len(report.matched_skills), len(report.missing_skills),
         )
+        report = report.model_copy(update={
+            "topn_experience_indices": selection.selected_experience_indices,
+            "topn_project_indices": selection.selected_project_indices,
+        })
         return {"matching_report": report}
 
     @staticmethod
@@ -218,7 +235,7 @@ class ResumePipeline:
         proj_set = set(selection.selected_project_indices)
         suggestions: list[SkillGapSuggestion] = []
 
-        for kw in jd.tech_keywords:
+        for kw in jd.tech_required + jd.tech_preferred:
             if kw.lower() in selected_kw:
                 continue
             covered_by: list[str] = []
@@ -256,23 +273,53 @@ class ResumePipeline:
         report: MatchingReport = _validate_qualification_years(final_state["matching_report"], profile)
         selection: SelectionResult = final_state["selection"]
 
-        total_skills = len(report.matched_skills) + len(report.missing_skills)
-        skill_score = len(report.matched_skills) / total_skills if total_skills > 0 else 0.0
+        exp_indices = selection.selected_experience_indices
+        proj_indices = selection.selected_project_indices
+
+        filtered_profile = profile.model_copy(update={
+            "work_experiences": [profile.work_experiences[i] for i in exp_indices if i < len(profile.work_experiences)],
+            "projects": [profile.projects[j] for j in proj_indices if j < len(profile.projects)],
+        })
+
+        kw_result = KeywordScorer().score_profile(filtered_profile, jd)
+
+        tech_req_score = _tech_req_score(report, jd)
+        tech_pref_score = _tech_pref_score(kw_result)
+        nice_score = _nice_score(kw_result)
 
         qual_details = report.qualification_details
-        qual_score = (
+        qual_score: Optional[float] = (
             sum(1 for q in qual_details if q.matched) / len(qual_details)
             if qual_details else None
         )
 
-        match_score = (
-            round(0.3 * skill_score + 0.7 * qual_score, 4)
-            if qual_score is not None
-            else skill_score
-        )
+        if qual_score is not None:
+            match_score = round(
+                0.40 * tech_req_score
+                + 0.35 * qual_score
+                + 0.20 * tech_pref_score
+                + 0.05 * nice_score,
+                4,
+            )
+        else:
+            match_score = round(
+                0.55 * tech_req_score
+                + 0.27 * tech_pref_score
+                + 0.18 * nice_score,
+                4,
+            )
 
-        kw_result = KeywordScorer().score_profile(profile, jd)
         gap_suggestions = self._compute_skill_gaps(profile, jd, selection)
+
+        # remap skill_matcher's relative highlighted indices back to full-profile indices
+        highlighted_exp = [
+            exp_indices[i] for i in report.highlighted_experience_indices
+            if i < len(exp_indices)
+        ]
+        highlighted_proj = [
+            proj_indices[j] for j in report.highlighted_project_indices
+            if j < len(proj_indices)
+        ]
 
         preview = MatchingPreview(
             session_id="",
@@ -281,8 +328,10 @@ class ResumePipeline:
             company=jd.company,
             matched_skills=report.matched_skills,
             missing_skills=report.missing_skills,
-            highlighted_experience_indices=selection.selected_experience_indices,
-            highlighted_project_indices=selection.selected_project_indices,
+            highlighted_experience_indices=highlighted_exp,
+            highlighted_project_indices=highlighted_proj,
+            topn_experience_indices=exp_indices,
+            topn_project_indices=proj_indices,
             all_experiences=profile.work_experiences,
             all_projects=profile.projects,
             relevance_notes=report.relevance_notes,

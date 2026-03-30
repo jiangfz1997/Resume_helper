@@ -8,10 +8,13 @@ export interface CategoryMatchResult {
 
 export interface KeywordMatchResult {
   score: number
-  tech_keywords: CategoryMatchResult
-  preferred_qualifications: CategoryMatchResult
+  tech_required: CategoryMatchResult
+  tech_preferred: CategoryMatchResult
+  nice_to_have: CategoryMatchResult
   matched_keywords: string[]
   missing_keywords: string[]
+  tech_keywords?: CategoryMatchResult
+  preferred_qualifications?: CategoryMatchResult
 }
 
 export class ApiError extends Error {
@@ -141,6 +144,8 @@ export interface MatchingPreview {
   missing_skills: string[]
   highlighted_experience_indices: number[]
   highlighted_project_indices: number[]
+  topn_experience_indices: number[]
+  topn_project_indices: number[]
   all_experiences: WorkExperience[]
   all_projects: Project[]
   relevance_notes: string
@@ -402,6 +407,8 @@ export function confirmGenerate(
   config: PipelineConfig,
   template_id?: string,
   template_source?: 'global' | 'user',
+  selected_experience_indices?: number[],
+  selected_project_indices?: number[],
 ): Promise<TailoredResumeDraft> {
   return request(
     '/resume/confirm',
@@ -412,6 +419,8 @@ export function confirmGenerate(
         config,
         template_id: template_id ?? null,
         template_source: template_source ?? null,
+        selected_experience_indices: selected_experience_indices ?? null,
+        selected_project_indices: selected_project_indices ?? null,
       }),
     },
     token,
@@ -511,8 +520,11 @@ export interface JobDescription {
   title: string
   company?: string
   qualifications: string[]
-  tech_keywords: string[]
-  preferred_qualifications: string[]
+  tech_required: string[]
+  tech_preferred: string[]
+  nice_to_have: string[]
+  tech_keywords?: string[]
+  preferred_qualifications?: string[]
 }
 
 export interface MicroValidateRequest {
