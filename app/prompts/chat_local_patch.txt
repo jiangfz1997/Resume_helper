@@ -10,7 +10,7 @@ Return a JSON object with exactly this structure:
 {{
     "reply": "A conversational 1-2 sentence explanation addressed to the user, e.g. 'I rewrote bullet 1 to highlight your payment API work instead of distributed systems.'",
     "diff_summary": "A concise technical one-liner describing what structurally changed, e.g. 'Replaced bullet 1 text; bullets 2-3 unchanged.'",
-    "updated_section": <the revised section as JSON, matching the original structure exactly>
+    "updated_section": <the revised section — if section_type is "summary", this must be a plain string; otherwise a JSON object matching the original structure exactly>
 }}
 
 Section type: {section_type}

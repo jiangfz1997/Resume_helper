@@ -182,6 +182,11 @@ class ModelFactory:
             )
 
         model_name = os.environ.get(cfg.model) or cfg.model
+        if model_name == cfg.model and os.environ.get(cfg.model) is None and cfg.model.isupper():
+            raise RuntimeError(
+                f"OpenAI model env var {cfg.model!r} is not set. "
+                f"Add it to your .env file (e.g. {cfg.model}=gpt-4o)."
+            )
         kwargs: dict = {
             "model": model_name,
             "openai_api_key": api_key,

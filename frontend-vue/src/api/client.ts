@@ -427,6 +427,46 @@ export function confirmGenerate(
   )
 }
 
+export function tailorOneItem(
+  token: string,
+  session_id: string,
+  item_type: 'exp' | 'proj',
+  item_index: number,
+): Promise<TailoredResumeDraft> {
+  return request(
+    '/resume/tailor-one',
+    {
+      method: 'POST',
+      body: JSON.stringify({ session_id, item_type, item_index }),
+    },
+    token,
+  )
+}
+
+export function tailorFull(
+  token: string,
+  session_id: string,
+  template_id?: string,
+  template_source?: 'global' | 'user',
+  selected_experience_indices?: number[],
+  selected_project_indices?: number[],
+): Promise<TailoredResumeDraft> {
+  return request(
+    '/resume/tailor-full',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        session_id,
+        template_id: template_id ?? null,
+        template_source: template_source ?? null,
+        selected_experience_indices: selected_experience_indices ?? null,
+        selected_project_indices: selected_project_indices ?? null,
+      }),
+    },
+    token,
+  )
+}
+
 // ── css renderer ──────────────────────────────────────────────
 
 export interface LayoutSettings {

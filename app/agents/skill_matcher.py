@@ -34,6 +34,12 @@ def _build_profile_summary(profile: MasterProfile) -> str:
             bullets = "".join(f"\n      * {b}" for b in p.bullets if b.strip())
             proj_lines.append(f"  - {header}{bullets}")
         parts.append("Projects:\n" + "\n".join(proj_lines))
+    if profile.educations:
+        edu_lines = [
+            f"  - {e.degree} in {e.field_of_study} at {e.institution} (graduated {e.end_date or e.start_date})"
+            for e in profile.educations
+        ]
+        parts.append("Education:\n" + "\n".join(edu_lines))
     return "\n".join(parts) if parts else "(empty profile)"
 
 

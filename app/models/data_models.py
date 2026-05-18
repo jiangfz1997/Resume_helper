@@ -316,6 +316,20 @@ class GenerateConfirmRequest(BaseModel):
     selected_project_indices: Optional[list[int]] = None
 
 
+class TailorOneRequest(BaseModel):
+    session_id: str
+    item_type: Literal["exp", "proj"]
+    item_index: int
+
+
+class TailorFullRequest(BaseModel):
+    session_id: str
+    template_id: Optional[uuid.UUID] = None
+    template_source: Optional[Literal["global", "user"]] = None
+    selected_experience_indices: Optional[list[int]] = None
+    selected_project_indices: Optional[list[int]] = None
+
+
 class ResumeRequest(BaseModel):
     jd_text: str
     config: PipelineConfig = Field(default_factory=PipelineConfig)
@@ -358,7 +372,7 @@ class CustomSection(BaseModel):
 
 
 class TailoredResumeDraft(BaseModel):
-    summary: str
+    summary: str = ""
     experiences: list[TailoredExperience]
     education: list[Education]
     projects: list[TailoredProject]

@@ -414,13 +414,22 @@
                 </n-card>
 
                 <!-- Experiences -->
-                <n-card size="small" title="Work Experience" style="margin-bottom: 10px" ref="expCardRef">
+                <n-card size="small" style="margin-bottom: 10px" ref="expCardRef">
+                  <template #header>
+                    <div style="display:flex;align-items:center;justify-content:space-between">
+                      <span style="font-size:13px;font-weight:500">Work Experience</span>
+                      <n-button size="tiny" type="primary" ghost :loading="tailorFullLoading" @click="runTailorFull">Optimize All (AI)</n-button>
+                    </div>
+                  </template>
                   <n-collapse v-model:expanded-names="expandedExp">
                     <n-collapse-item v-for="(exp, ei) in draft.experiences" :key="ei" :name="String(ei)">
                       <template #header>
                         <n-space align="center" size="small" style="width:100%;justify-content:space-between">
                           <n-text style="font-size:12px;font-weight:500">{{ exp.title }} @ {{ exp.company }}</n-text>
-                          <n-button size="tiny" quaternary @click.stop="openComment(`experiences[${ei}]`, `${exp.title} @ ${exp.company}`)">Comment</n-button>
+                          <n-space size="small" @click.stop>
+                            <n-button size="tiny" :loading="tailorOneLoading === ei" @click.stop="runTailorOne('exp', ei)">Optimize</n-button>
+                            <n-button size="tiny" quaternary @click.stop="openComment(`experiences[${ei}]`, `${exp.title} @ ${exp.company}`)">Comment</n-button>
+                          </n-space>
                         </n-space>
                       </template>
                       <n-grid :cols="3" :x-gap="8" style="margin-bottom:10px">
@@ -458,13 +467,19 @@
                 </n-card>
 
                 <!-- Projects -->
-                <n-card size="small" title="Projects" style="margin-bottom: 10px" ref="projCardRef">
+                <n-card size="small" style="margin-bottom: 10px" ref="projCardRef">
+                  <template #header>
+                    <span style="font-size:13px;font-weight:500">Projects</span>
+                  </template>
                   <n-collapse v-model:expanded-names="expandedProj">
                     <n-collapse-item v-for="(proj, pi) in draft.projects" :key="pi" :name="String(pi)">
                       <template #header>
                         <n-space align="center" size="small" style="width:100%;justify-content:space-between">
                           <n-text style="font-size:12px;font-weight:500">{{ proj.name }}</n-text>
-                          <n-button size="tiny" quaternary @click.stop="openComment(`projects[${pi}]`, proj.name)">Comment</n-button>
+                          <n-space size="small" @click.stop>
+                            <n-button size="tiny" :loading="tailorOneLoading === -(pi + 1)" @click.stop="runTailorOne('proj', pi)">Optimize</n-button>
+                            <n-button size="tiny" quaternary @click.stop="openComment(`projects[${pi}]`, proj.name)">Comment</n-button>
+                          </n-space>
                         </n-space>
                       </template>
                       <n-grid :cols="2" :x-gap="8" style="margin-bottom:8px">
@@ -492,6 +507,60 @@
                   </n-space>
                 </n-card>
 
+              </div>
+            </n-tab-pane>
+
+            <!-- JD tab -->
+            <n-tab-pane name="jd" tab="JD" :disabled="!sessionJd" style="flex:1;overflow-y:auto;padding:0">
+              <div v-if="sessionJd" style="padding:12px 8px">
+                <!-- Title + company -->
+                <n-card size="small" style="margin-bottom:10px;background:#1a1a1a">
+                  <n-text style="font-size:13px;font-weight:600">{{ sessionJd.title }}</n-text>
+                  <n-text depth="3" style="font-size:12px;display:block;margin-top:2px" v-if="sessionJd.company">@ {{ sessionJd.company }}</n-text>
+                </n-card>
+
+                <!-- Required tech -->
+                <n-card size="small" style="margin-bottom:10px;background:#1a1a1a" v-if="sessionJd.tech_required?.length">
+                  <template #header>
+                    <n-text style="font-size:12px;color:#d03050;text-transform:uppercase;letter-spacing:0.4px">Required Tech</n-text>
+                  </template>
+                  <n-space size="small" style="flex-wrap:wrap">
+                    <n-tag v-for="kw in sessionJd.tech_required" :key="kw" type="error" size="small">{{ kw }}</n-tag>
+                  </n-space>
+                </n-card>
+
+                <!-- Preferred tech -->
+                <n-card size="small" style="margin-bottom:10px;background:#1a1a1a" v-if="sessionJd.tech_preferred?.length">
+                  <template #header>
+                    <n-text style="font-size:12px;color:#f0a020;text-transform:uppercase;letter-spacing:0.4px">Preferred Tech</n-text>
+                  </template>
+                  <n-space size="small" style="flex-wrap:wrap">
+                    <n-tag v-for="kw in sessionJd.tech_preferred" :key="kw" type="warning" size="small">{{ kw }}</n-tag>
+                  </n-space>
+                </n-card>
+
+                <!-- Nice to have -->
+                <n-card size="small" style="margin-bottom:10px;background:#1a1a1a" v-if="sessionJd.nice_to_have?.length">
+                  <template #header>
+                    <n-text style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.4px">Nice to Have</n-text>
+                  </template>
+                  <n-space size="small" style="flex-wrap:wrap">
+                    <n-tag v-for="kw in sessionJd.nice_to_have" :key="kw" size="small">{{ kw }}</n-tag>
+                  </n-space>
+                </n-card>
+
+                <!-- Qualifications -->
+                <n-card size="small" style="background:#1a1a1a" v-if="sessionJd.qualifications?.length">
+                  <template #header>
+                    <n-text style="font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:0.4px">Qualifications</n-text>
+                  </template>
+                  <n-space vertical size="small">
+                    <div v-for="q in sessionJd.qualifications" :key="q" style="display:flex;align-items:flex-start;gap:6px">
+                      <n-text depth="3" style="font-size:13px;flex-shrink:0">·</n-text>
+                      <n-text style="font-size:12px">{{ q }}</n-text>
+                    </div>
+                  </n-space>
+                </n-card>
               </div>
             </n-tab-pane>
 
@@ -778,7 +847,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useMessage } from 'naive-ui'
-import { analyzeJD, batchVerify, confirmGenerate, defaultLayoutSettings, diagnose, getProfile, getSession, microValidate, updateSessionDraft } from '../api/client'
+import { analyzeJD, batchVerify, confirmGenerate, defaultLayoutSettings, diagnose, getProfile, getSession, microValidate, tailorOneItem, tailorFull, updateSessionDraft } from '../api/client'
 import type {
   BatchVerifyResponse,
   CategoryMatchResult,
@@ -835,6 +904,8 @@ const analyzeLoading = ref(false)
 const analyzeError = ref('')
 const draftLoading = ref(false)
 const generateError = ref('')
+const tailorOneLoading = ref<number | null>(null)   // index of item being optimized, null = idle
+const tailorFullLoading = ref(false)
 
 // Stored for session_id reference after analyze
 const preview = ref<MatchingPreview | null>(null)
@@ -954,6 +1025,42 @@ async function runGenerate(): Promise<void> {
   }
 }
 
+async function runTailorOne(itemType: 'exp' | 'proj', itemIndex: number): Promise<void> {
+  if (!currentSessionId.value) return
+  tailorOneLoading.value = itemIndex * (itemType === 'proj' ? -1 : 1)
+  try {
+    const updated = await tailorOneItem(token(), currentSessionId.value, itemType, itemIndex)
+    draft.value = { ...draft.value!, ...updated }
+    message.success('Optimized successfully')
+  } catch (e) {
+    message.error('Optimization failed: ' + (e as Error).message)
+  } finally {
+    tailorOneLoading.value = null
+  }
+}
+
+async function runTailorFull(): Promise<void> {
+  if (!currentSessionId.value) return
+  tailorFullLoading.value = true
+  try {
+    const updated = await tailorFull(
+      token(),
+      currentSessionId.value,
+      undefined,
+      undefined,
+      selectedExpIndices.value,
+      selectedProjIndices.value,
+    )
+    draft.value = { show_summary: true, show_experiences: true, show_education: true, show_projects: true, show_skills: true, custom_sections: [], ...updated, summary: updated.summary ?? '', contact_info: updated.contact_info ?? {} }
+    message.success('Full optimization complete')
+    runDiagnose()
+  } catch (e) {
+    message.error('Full optimization failed: ' + (e as Error).message)
+  } finally {
+    tailorFullLoading.value = false
+  }
+}
+
 onMounted(async () => {
   document.addEventListener('mousedown', onDocMouseDown)
 
@@ -986,6 +1093,7 @@ async function loadSessionById(sid: string): Promise<void> {
         show_skills: true,
         custom_sections: [],
         ...detail.tailored_draft,
+        summary: detail.tailored_draft.summary ?? '',
         contact_info: detail.tailored_draft.contact_info ?? {},
       }
       const topnExp = detail.highlighted_experience_indices ?? []

@@ -179,8 +179,10 @@ class ResumePipeline:
             "node:select_top_n | exp=%d proj=%d budget=%d",
             len(profile.work_experiences), len(profile.projects), self._total_budget,
         )
+        n_exp = len(profile.work_experiences)
+        effective_min_exp = max(self._min_exp, min(2, n_exp))
         selection = await self._top_n_selector.select(
-            profile, jd, self._total_budget, self._min_exp, self._min_proj,
+            profile, jd, self._total_budget, effective_min_exp, self._min_proj,
         )
         logger.debug(
             "node:select_top_n | selected exp=%s proj=%s",

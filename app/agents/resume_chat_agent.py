@@ -84,7 +84,9 @@ def _extract_section(draft: TailoredResumeDraft, path: str) -> tuple[str, Any]:
 
 def _apply_patch_value(draft: TailoredResumeDraft, path: str, updated: Any) -> None:
     if path == "summary":
-        draft.summary = updated
+        if isinstance(updated, dict):
+            updated = updated.get("content") or updated.get("text") or str(updated)
+        draft.summary = str(updated)
         return
     m_b = _BULLET_PATH_RE.match(path)
     if m_b:

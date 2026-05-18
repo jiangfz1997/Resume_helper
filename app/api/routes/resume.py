@@ -26,6 +26,8 @@ from app.models.data_models import (
     ResumeRequest,
     ResumeResponse,
     TailoredResumeDraft,
+    TailorFullRequest,
+    TailorOneRequest,
 )
 from app.pipeline.pipeline import ResumePipeline
 from app.repositories.session_repository import ResumeSessionRepository
@@ -86,13 +88,11 @@ async def confirm_and_draft(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
 
     from app.models.data_models import JobDescription, MasterProfile, MatchingReport
-    from app.agents.resume_tailor import OllamaResumeTailor
+    from app.agents.resume_tailor import OllamaResumeTailor, assemble_base_draft
 
     profile = MasterProfile.model_validate(db_session.profile_snapshot_json)
     jd = JobDescription.model_validate(db_session.jd_json)
     matching_report = MatchingReport.model_validate(db_session.matching_report_json)
-
-    current_title = profile.work_experiences[0].title if profile.work_experiences else "Candidate"
 
     template_id = request.template_id
     template_source = request.template_source
@@ -126,18 +126,18 @@ async def confirm_and_draft(
     )
 
     try:
-        draft = await OllamaResumeTailor().tailor(
+        tailor = OllamaResumeTailor()
+        summary = await tailor.generate_summary(profile, jd)
+        draft = assemble_base_draft(
             profile=profile,
-            jd=jd,
-            matching_report=matching_report,
-            current_title=current_title,
-            template_id=template_id,
-            template_source=template_source,
             exp_indices=exp_indices,
             proj_indices=proj_indices,
+            summary=summary,
+            template_id=template_id,
+            template_source=template_source,
         )
         await session_repo.update_draft(uuid.UUID(request.session_id), draft)
-        logger.info("confirm_and_draft | done | user_id=%s", user_id)
+        logger.info("confirm_and_draft | done (base draft) | user_id=%s", user_id)
         return draft
     except Exception as exc:
         await session_repo.mark_failed(uuid.UUID(request.session_id), str(exc))
@@ -273,6 +273,124 @@ async def export_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": "inline; filename=resume.pdf"},
     )
+
+
+@router.post("/tailor-one", response_model=TailoredResumeDraft)
+async def tailor_one_item(
+    request: TailorOneRequest,
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+    session_repo: Annotated[ResumeSessionRepository, Depends(get_session_repo)],
+) -> TailoredResumeDraft:
+    """Optimize a single experience or project item and return the updated full draft."""
+    logger.info(
+        "tailor_one | user_id=%s | session_id=%s | item_type=%s | index=%d",
+        user_id, request.session_id, request.item_type, request.item_index,
+    )
+    db_session = await session_repo.get(uuid.UUID(request.session_id), user_id)
+    if db_session is None or db_session.profile_snapshot_json is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
+    if db_session.draft_json is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No draft yet — call /confirm first")
+
+    from app.models.data_models import JobDescription, MasterProfile, MatchingReport
+    from app.agents.resume_tailor import OllamaResumeTailor
+
+    profile = MasterProfile.model_validate(db_session.profile_snapshot_json)
+    jd = JobDescription.model_validate(db_session.jd_json)
+    matching_report = MatchingReport.model_validate(db_session.matching_report_json)
+    draft = TailoredResumeDraft.model_validate(db_session.draft_json)
+
+    tailor = OllamaResumeTailor()
+
+    if request.item_type == "exp":
+        items = draft.experiences
+        if request.item_index >= len(items):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="experience index out of range")
+        # find the matching raw WorkExperience by company+title to preserve original data
+        tailored = items[request.item_index]
+        raw = next(
+            (e for e in profile.work_experiences
+             if e.company == tailored.company and e.title == tailored.title),
+            None,
+        )
+        if raw is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not find matching raw experience")
+        optimized = await tailor.tailor_one(raw, "exp", jd, matching_report)
+        updated_experiences = list(draft.experiences)
+        updated_experiences[request.item_index] = optimized
+        draft = draft.model_copy(update={"experiences": updated_experiences})
+
+    else:
+        items = draft.projects
+        if request.item_index >= len(items):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project index out of range")
+        tailored = items[request.item_index]
+        raw_proj = next(
+            (p for p in profile.projects if p.name == tailored.name),
+            None,
+        )
+        if raw_proj is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not find matching raw project")
+        optimized = await tailor.tailor_one(raw_proj, "proj", jd, matching_report)
+        updated_projects = list(draft.projects)
+        updated_projects[request.item_index] = optimized
+        draft = draft.model_copy(update={"projects": updated_projects})
+
+    await session_repo.update_draft(uuid.UUID(request.session_id), draft)
+    logger.info("tailor_one | done | user_id=%s | item_type=%s | index=%d", user_id, request.item_type, request.item_index)
+    return draft
+
+
+@router.post("/tailor-full", response_model=TailoredResumeDraft)
+async def tailor_full(
+    request: TailorFullRequest,
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+    session_repo: Annotated[ResumeSessionRepository, Depends(get_session_repo)],
+    global_repo: Annotated[GlobalTemplateRepository, Depends(get_global_template_repo)],
+    user_repo: Annotated[UserTemplateRepository, Depends(get_user_template_repo)],
+) -> TailoredResumeDraft:
+    """Full LLM rewrite of the entire resume (original tailor behaviour)."""
+    logger.info("tailor_full | user_id=%s | session_id=%s", user_id, request.session_id)
+
+    db_session = await session_repo.get(uuid.UUID(request.session_id), user_id)
+    if db_session is None or db_session.profile_snapshot_json is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or expired")
+
+    from app.models.data_models import JobDescription, MasterProfile, MatchingReport
+    from app.agents.resume_tailor import OllamaResumeTailor
+
+    profile = MasterProfile.model_validate(db_session.profile_snapshot_json)
+    jd = JobDescription.model_validate(db_session.jd_json)
+    matching_report = MatchingReport.model_validate(db_session.matching_report_json)
+    current_title = profile.work_experiences[0].title if profile.work_experiences else "Candidate"
+
+    template_id = request.template_id
+    template_source = request.template_source
+    if template_id is not None:
+        tpl = await (global_repo if template_source == "global" else user_repo).get_by_id(template_id)
+        if tpl is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+
+    exp_indices = request.selected_experience_indices or matching_report.topn_experience_indices
+    proj_indices = request.selected_project_indices or matching_report.topn_project_indices
+
+    try:
+        draft = await OllamaResumeTailor().tailor(
+            profile=profile,
+            jd=jd,
+            matching_report=matching_report,
+            current_title=current_title,
+            template_id=template_id,
+            template_source=template_source,
+            exp_indices=exp_indices,
+            proj_indices=proj_indices,
+        )
+        await session_repo.update_draft(uuid.UUID(request.session_id), draft)
+        logger.info("tailor_full | done | user_id=%s", user_id)
+        return draft
+    except Exception as exc:
+        await session_repo.mark_failed(uuid.UUID(request.session_id), str(exc))
+        raise
 
 
 # # DEPRECATED: single-step generate was replaced by /analyze + /confirm two-phase flow.
