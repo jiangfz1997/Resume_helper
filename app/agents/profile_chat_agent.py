@@ -99,6 +99,7 @@ class OllamaProfileChatAgent:
     ) -> str:
         type_hints: dict[str, str] = {
             "summary": 'Return updated_section as a plain string.',
+            "selection": 'Return updated_section as a plain string with the improvement applied.',
             "work_experiences": (
                 'Return updated_section as a JSON object matching: '
                 '{"company": str, "title": str, "start_date": str, "end_date": str|null, "description": [str]}'

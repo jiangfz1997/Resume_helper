@@ -12,7 +12,9 @@ from app.api.dependencies import (
 from app.models.data_models import TemplateCreate, TemplateRead
 from app.repositories.template_repository import GlobalTemplateRepository, UserTemplateRepository
 
-router = APIRouter(prefix="/templates", tags=["templates"])
+# DEPRECATED: LaTeX template workflow is no longer active.
+# All endpoints are kept for backwards compatibility but are not called by the frontend.
+router = APIRouter(prefix="/templates", tags=["templates (deprecated)"])
 
 
 @router.get("", response_model=list[TemplateRead])

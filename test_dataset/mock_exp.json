@@ -1,0 +1,130 @@
+{"projects":[
+  {
+    "name": "High-Concurrency E-Commerce Backend",
+    "time": "May 2023 - Dec 2023",
+    "location": "Seattle, WA",
+    "experiences": [
+      "Architected and developed a microservices-based backend system using Java and Spring Boot to handle user authentication and inventory management.",
+      "Deployed containerized services onto AWS EKS (Kubernetes), implementing auto-scaling policies that increased system throughput by 40% during peak events.",
+      "Optimized complex PostgreSQL queries and introduced Redis caching, reducing average API latency from 250ms to 45ms.",
+      "Collaborated with frontend developers to design RESTful APIs, utilizing Swagger for API documentation and contract testing."
+    ]
+  },
+  {
+    "name": "Personalized Content Recommendation Engine",
+    "time": "Jan 2022 - Apr 2023",
+    "location": "San Francisco, CA",
+    "experiences": [
+      "Engineered a machine learning recommendation pipeline using Python, PyTorch, and Scikit-learn, improving user click-through rate (CTR) by 15%.",
+      "Processed over 500GB of daily user interaction logs using SQL and Pandas to extract meaningful feature vectors for model training.",
+      "Designed and executed A/B testing frameworks to evaluate model performance across different demographic segments.",
+      "Packaged the final recommendation model into a Docker container and deployed it as a FastAPI service for real-time inference."
+    ]
+  },
+  {
+    "name": "Automated Web Application Testing Framework",
+    "time": "Jun 2021 - Aug 2021",
+    "location": "Remote",
+    "experiences": [
+      "Built an end-to-end (E2E) automated testing framework from scratch using Python, Selenium, and Pytest for a SaaS web application.",
+      "Integrated the test suite into the CI/CD pipeline using Jenkins and GitHub Actions, ensuring zero regressions deployed to production.",
+      "Developed mock APIs and isolated test environments using Docker Compose to stabilize the testing process and reduce flaky tests by 80%.",
+      "Authored comprehensive test plans and bug reports in JIRA, collaborating closely with the QA and SDE teams."
+    ]
+  },
+  {
+    "name": "Distributed In-Memory Key-Value Store",
+    "time": "Sep 2023 - Present",
+    "location": "New York, NY",
+    "experiences": [
+      "Designed a distributed, fault-tolerant key-value store in C++ from the ground up, implementing the Raft consensus algorithm for leader election.",
+      "Utilized POSIX threads (pthreads) and mutexes to manage concurrent read/write operations, achieving a throughput of 100k+ ops/sec.",
+      "Implemented a custom RPC framework using gRPC and Protocol Buffers to facilitate low-latency node-to-node communication.",
+      "Wrote rigorous unit tests using Google Test (gtest) to verify edge cases in network partition scenarios."
+    ]
+  },
+  {
+    "name": "Real-Time User Analytics Data Pipeline",
+    "time": "Mar 2022 - Nov 2022",
+    "location": "Austin, TX",
+    "experiences": [
+      "Developed an ETL data pipeline using Scala and Apache Spark to ingest and process 2TB+ of streaming data daily.",
+      "Configured Apache Kafka clusters as a message broker to decouple data producers from downstream data warehouses.",
+      "Aggregated and transformed raw event logs, loading the structured data into AWS Redshift for business intelligence reporting.",
+      "Monitored pipeline health and data latency using Datadog and customized alert thresholds."
+    ]
+  },
+  {
+    "name": "3D Action RPG Game Module",
+    "time": "Jan 2024 - Present",
+    "location": "London, ON",
+    "experiences": [
+      "Programmed core gameplay mechanics and character controllers for a 3D Action RPG using C# and the Unity Engine.",
+      "Implemented an AI behavior tree for enemy NPCs, allowing for complex decision-making, pathfinding, and dynamic combat responses.",
+      "Optimized memory management and rendering performance using the Unity Profiler, maintaining a stable 60 FPS on mid-range hardware.",
+      "Managed asset pipelines and version control using Git LFS and Perforce in a cross-functional team of artists and designers."
+    ]
+  },
+  {
+    "name": "Generative AI Customer Support Agent",
+    "time": "Aug 2023 - Feb 2024",
+    "location": "Remote",
+    "experiences": [
+      "Developed an intelligent chatbot leveraging large language models (LLMs) via the HuggingFace Transformers library and LangChain.",
+      "Implemented a Retrieval-Augmented Generation (RAG) architecture using Pinecone vector database to ground AI responses in company documentation.",
+      "Fine-tuned open-source NLP models using Python and PyTorch on proprietary customer service transcripts to improve domain accuracy.",
+      "Built a web interface using React and Node.js to allow internal teams to evaluate and grade the AI agent's responses."
+    ]
+  },
+  {
+    "name": "Cloud Security & Infrastructure Automation",
+    "time": "Jul 2020 - May 2021",
+    "location": "Boston, MA",
+    "experiences": [
+      "Automated the provisioning of secure AWS infrastructure using Terraform (Infrastructure as Code) and Go.",
+      "Conducted vulnerability scanning and penetration testing on corporate web assets using tools like Burp Suite and OWASP ZAP.",
+      "Enforced strict IAM policies and role-based access control (RBAC) across multiple Kubernetes clusters.",
+      "Wrote Bash scripts to automate daily security auditing tasks and log aggregation into Splunk."
+    ]
+  },
+  {
+    "name": "Interactive Dashboard Fullstack Application",
+    "time": "Feb 2021 - Dec 2021",
+    "location": "Toronto, ON",
+    "experiences": [
+      "Spearheaded the development of a real-time financial dashboard using JavaScript, React.js, and Redux for state management.",
+      "Designed a responsive and accessible user interface using CSS modules and Tailwind CSS, improving mobile usability.",
+      "Built backend data resolvers using Node.js and GraphQL to fetch aggregated financial metrics from multiple legacy systems.",
+      "Implemented comprehensive frontend unit testing using Jest and React Testing Library to ensure component reliability."
+    ]
+  }
+  
+],
+"works":[
+    {
+    "name": "System Reliability & Chaos Engineering",
+    "time": "Oct 2022 - Jun 2023",
+    "location": "Chicago, IL",
+    "experiences": [
+      "Led load testing initiatives for critical microservices using JMeter and Locust to identify system bottlenecks prior to product launches.",
+      "Introduced Chaos Engineering practices by deploying Chaos Mesh into staging Kubernetes environments to test system resilience.",
+      "Designed centralized monitoring dashboards in Grafana, querying metrics from Prometheus to track CPU, memory, and application-level errors.",
+      "Collaborated with software development engineers to resolve memory leaks and race conditions discovered during extreme load scenarios."
+    ]
+  },
+  
+ {
+    "name": "Undergraduate Research Assistant",
+    "time": "Sep 2022 - Apr 2023",
+    "location": "Waterloo, ON",
+    "experiences": [
+      "Recruited and scheduled human participants for cognitive behavior studies.",
+      "Administered computer-based psychological tests and recorded observational data.",
+      "Cleaned and pre-processed survey results using Python (Pandas) before importing them into SPSS for statistical analysis.",
+      "Co-authored a poster presentation summarizing the initial findings for a university research symposium."
+    ]
+  }
+]
+}
+
+

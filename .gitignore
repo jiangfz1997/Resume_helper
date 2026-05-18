@@ -65,9 +65,20 @@ Thumbs.db
 pgdata/
 
 # ── Misc artefacts ────────────────────────────────────────
-=0.11.0
+=*
 *.log
 *.tmp
 *.bak
 
+# ── Temp / draft docs ─────────────────────────────────────
+tmp_doc/
 
+# ── Runtime / debug scripts ───────────────────────────────
+draw_graph.py
+graphs.py
+model_example.py
+
+# ── Logs ──────────────────────────────────────────────────
+logs/
+
+.watchfilesignore

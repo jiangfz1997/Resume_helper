@@ -78,6 +78,7 @@ class UserProfileORM(Base):
     educations: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     projects: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact_info: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
     base_resume: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

@@ -1,6 +1,6 @@
 import uuid
 
-from app.models.data_models import MasterProfile, ParsedProfileDraft, ProfileUpdate, Skill, TailoredResumeDraft
+from app.models.data_models import MasterProfile, ParsedProfileDraft, ProfileUpdate, Skill
 from app.repositories.profile_repository import ProfileRepository
 
 
@@ -22,11 +22,22 @@ class ProfileManager:
             await self._repo.append_skills(user_id, draft.skills)
         return await self._repo.get_profile(user_id)
 
+    async def replace_parsed_draft(
+        self, user_id: uuid.UUID, draft: ParsedProfileDraft
+    ) -> MasterProfile | None:
+        update = ProfileUpdate(
+            work_experiences=draft.work_experiences or None,
+            educations=draft.educations or None,
+            projects=draft.projects or None,
+            summary=draft.summary or None,
+        )
+        await self._repo.upsert_profile(user_id, update)
+        if draft.skills:
+            await self._repo.append_skills(user_id, draft.skills)
+        return await self._repo.get_profile(user_id)
+
     async def append_skills(self, user_id: uuid.UUID, skills: list[Skill]) -> None:
         await self._repo.append_skills(user_id, skills)
 
     async def replace_skills(self, user_id: uuid.UUID, skills: list[Skill]) -> None:
         await self._repo.replace_skills(user_id, skills)
-
-    async def save_base_resume(self, user_id: uuid.UUID, draft: TailoredResumeDraft) -> None:
-        await self._repo.save_base_resume(user_id, draft)

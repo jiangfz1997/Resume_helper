@@ -160,6 +160,16 @@ defineExpose({
     pendingInit.value = init
     isOpen.value = true
   },
+  openWithSelection(text: string) {
+    const label = text.length > 50 ? text.substring(0, 50) + '...' : text
+    pendingInit.value = {
+      scope: { path: 'selection', label: `"${label}"` },
+      sectionType: 'selection',
+      sectionIndex: undefined,
+      sectionData: text,
+    }
+    isOpen.value = true
+  },
 })
 </script>
 

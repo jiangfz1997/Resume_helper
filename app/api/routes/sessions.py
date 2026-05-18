@@ -17,6 +17,7 @@ from app.models.data_models import (
 )
 from app.models.db_models import ResumeSessionORM
 from app.repositories.session_repository import ResumeSessionRepository
+from app.services.keyword_scorer import KeywordScorer
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -42,29 +43,44 @@ def _to_detail(row: ResumeSessionORM) -> ResumeSessionDetail:
         missing = report.missing_skills
         all_exp = profile.work_experiences
         all_proj = profile.projects
-        highlighted = report.highlighted_experiences
+        highlighted_exp_indices = report.highlighted_experience_indices
+        highlighted_proj_indices = report.highlighted_project_indices
         relevance = report.relevance_notes
+        qual_details = report.qualification_details
     else:
-        matched, missing, all_exp, all_proj, highlighted, relevance = [], [], [], [], [], ""
+        matched, missing, all_exp, all_proj = [], [], [], []
+        highlighted_exp_indices, highlighted_proj_indices, relevance = [], [], ""
+        qual_details = []
+
+    parsed_jd: JobDescription | None = None
+    if row.jd_json:
+        parsed_jd = JobDescription.model_validate(row.jd_json)
 
     tailored_draft: TailoredResumeDraft | None = None
+    kw_detail = None
     if row.tailored_draft_json:
         tailored_draft = TailoredResumeDraft.model_validate(row.tailored_draft_json)
+        if parsed_jd is not None:
+            kw_detail = KeywordScorer().score(tailored_draft, parsed_jd)
 
     return ResumeSessionDetail(
         id=str(row.id),
         jd_text=row.jd_text,
+        jd=parsed_jd,
         job_title=row.job_title,
         company=row.company,
         match_score=row.match_score,
         matched_skills=matched,
         missing_skills=missing,
-        highlighted_experiences=highlighted,
+        highlighted_experience_indices=highlighted_exp_indices,
+        highlighted_project_indices=highlighted_proj_indices,
         all_experiences=all_exp,
         all_projects=all_proj,
         relevance_notes=relevance,
+        qualification_details=qual_details,
         status=ResumeSessionStatus(row.status),
         tailored_draft=tailored_draft,
+        kw_detail=kw_detail,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, profile, resume, sessions, users
+from app.api.routes import auth, copilot, profile, resume, sessions, users
 from app.api.routes import templates
 from app.api.routes import chat
 from app.api.routes.chat import stream_router as chat_stream_router
@@ -50,6 +50,7 @@ app.include_router(profile.router)
 app.include_router(resume.router)
 app.include_router(sessions.router)
 app.include_router(templates.router)
+app.include_router(copilot.router)
 app.include_router(chat_stream_router)   # must be before chat.router (avoids /{session_id} 405)
 app.include_router(chat.router)
 

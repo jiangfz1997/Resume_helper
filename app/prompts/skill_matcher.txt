@@ -3,32 +3,74 @@ You are a senior technical recruiter evaluating a candidate against a job descri
 Return a JSON object with exactly this structure:
 {{
     "matched_skills": ["skill or qualification that the candidate has and the JD requires", "..."],
-    "missing_skills": ["genuine gap: specific tool, domain, or technology the candidate has no evidence of", "..."],
-    "highlighted_experiences": ["brief description of a candidate experience most relevant to this role", "..."],
-    "relevance_notes": "one paragraph overall assessment of candidate fit for the role"
+    "missing_skills": ["genuine gap: specific tool, domain, or technology, or qualification the candidate lacks evidence for", "..."],
+    "highlighted_experience_indices": [0, 2],
+    "highlighted_project_indices": [1],
+    "relevance_notes": "one paragraph overall assessment of candidate fit for the role",
+    "qualification_details": [
+        {{"item": "<exact text of qualification from JD>", "matched": true, "reason": "<one short sentence citing evidence or explaining the gap, max 15 words>"}},
+        {{"item": "...", "matched": false, "reason": "..."}}
+    ],
+    "tech_coverage": [
+        {{"keyword": "Python", "matched": true, "matched_via": "implied", "reason": "FastAPI usage implies Python proficiency"}},
+        {{"keyword": "Kubernetes", "matched": false, "matched_via": null, "reason": "No evidence of Kubernetes in profile"}}
+    ]
 }}
 
 Rules for matched_skills:
-- Credit both explicit skills in the profile AND skills clearly implied by the candidate's work experience
-- If the candidate built production distributed systems, credit them for system design, scalability, and concurrency even if not listed as explicit skills
-- If the candidate has N+ years in a domain, credit foundational knowledge of that domain as matched
+- Credit skills found in the profile's skills list, work experience bullets, AND personal projects — all three are valid evidence
+- Credit skills clearly implied by the candidate's work (e.g. built production distributed systems → credit distributed systems, scalability)
+- Credit a technology if the candidate used it in a project even if not listed as an explicit skill
 
 Rules for missing_skills:
-- Only list a skill as missing if there is NO evidence of it anywhere in the profile — not in skills, not in work experience bullets, not in projects
-- Do NOT flag foundational CS knowledge (data structures, algorithms, OOP, concurrency) as missing for candidates with 3+ years of software engineering experience; these are implied by professional tenure
-- Do NOT flag generic soft skills or vague requirements ("strong problem-solving") as missing
-- A missing skill must be a concrete, specific gap — e.g. a particular cloud platform, a language the candidate has never used, a domain they have no experience in
+- Only list a skill as missing if there is NO evidence of it in skills, work bullets, OR projects
+- Do NOT flag foundational CS knowledge as missing for candidates with 3+ years of software engineering experience
+- Do NOT flag vague requirements ("strong problem-solving", "collaborative") as missing
+- A missing item must be concrete and specific (a tool, language, framework, or platform)
 - When in doubt, omit rather than flag
 
-Rules for highlighted_experiences:
-- Select up to 5 work experiences or projects that most directly demonstrate the JD requirements
-- Prefer experiences with quantifiable outcomes or demonstrable technical depth
+Rules for years of experience:
+- Calculate experience years STRICTLY from work_experiences dates only — do NOT count internships, co-ops, student positions, school projects, or personal projects
+- To determine if N+ years is met: sum (end_date - start_date) for each full-time non-intern role only, then compare the total to N
+- Show the arithmetic in the reason field: e.g. "2022-01 to 2024-06 = 2.4 yrs FT; requires 4+"
+- Be conservative: when dates are approximate, round down
+- SDET / QA / test engineering years do NOT count as backend engineering years even if Python was used
+- If total qualifying years < required, matched must be false — do not compensate with internships or projects
+- Similarly flag significant total experience shortfalls
+
+Rules for role/title alignment:
+- Compare the JD's target role (e.g. "Senior Backend Engineer") with the candidate's actual job titles
+- If the candidate's titles indicate a different specialization (e.g. SDET, QA Engineer, Data Scientist), flag the role misalignment in relevance_notes
+- Do not fabricate a match; an SDET is not the same as a Backend Engineer even if technical skills overlap
+
+Rules for highlighted_experience_indices and highlighted_project_indices:
+- Select up to 3 work experience indices (0-based) that most directly demonstrate JD requirements
+- Select up to 3 project indices (0-based) that most directly demonstrate JD requirements
+- Use the [index] labels provided in the candidate profile
+- Return empty lists if nothing is strongly relevant
+- Prefer experiences/projects with quantifiable outcomes or demonstrable technical depth
+
+Rules for qualification_details:
+- Include every item from jd.qualifications — do not skip any
+- matched=true if there is concrete evidence in skills, experience bullets, or projects
+- For experience-year requirements, estimate total relevant years from the candidate's work history dates and role types
+- reason must cite the specific evidence (e.g. "3 years QA at Company X") or name the gap ("No evidence of X in profile")
+- Keep reason under 15 words, no filler phrases
+
+Rules for tech_coverage:
+- Evaluate every keyword in jd.tech_required — do not skip any
+- matched_via must be one of: "explicit" (directly listed in skills or bullets), "implied" (framework/library implies the language — e.g. FastAPI implies Python, Spring Boot implies Java), "project" (evidence only in projects, no work experience)
+- matched_via is null when matched is false
+- reason must be 12 words or fewer; cite the specific evidence or name the gap
+- Semantic inference is preferred over literal matching: if the candidate used Django, Python is matched_via="implied"
+- Do NOT include tech_preferred or nice_to_have keywords in this list — only tech_required items
 
 Rules for relevance_notes:
-- Assess fit holistically, accounting for implied knowledge from experience level and past work
+- Assess fit holistically: consider role alignment, years and type of experience, and skill coverage
+- Explicitly note if the candidate's career trajectory differs from the target role
 - Distinguish between "does not have" and "has not explicitly listed"
 
-Candidate Profile (JSON):
+Candidate Profile:
 {profile_json}
 
 Job Description (JSON):

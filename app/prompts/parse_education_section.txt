@@ -36,4 +36,4 @@ Return a JSON object with key "items" containing the array of entries:
 Education section text:
 {section_text}
 
-Return only the JSON array.
+Return only the JSON object.

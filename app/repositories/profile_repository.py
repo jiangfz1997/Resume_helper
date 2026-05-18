@@ -6,13 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.interfaces.base import IProfileRepository
 from app.models.data_models import (
+    ContactInfo,
     Education,
     MasterProfile,
     ParsedProfileDraft,
     ProfileUpdate,
     Project,
     Skill,
-    TailoredResumeDraft,
     WorkExperience,
 )
 from app.models.db_models import UserORM, UserProfileORM, UserSkillORM
@@ -41,14 +41,15 @@ class ProfileRepository(IProfileRepository):
             )
         ).scalars().all()
 
-        base_resume: TailoredResumeDraft | None = None
-        if profile and profile.base_resume:
-            base_resume = TailoredResumeDraft.model_validate(profile.base_resume)
+        contact_info: ContactInfo | None = None
+        if profile and profile.contact_info:
+            contact_info = ContactInfo.model_validate(profile.contact_info)
 
         return MasterProfile(
             user_id=user_id,
             full_name=user.full_name,
             summary=profile.summary if profile else None,
+            contact_info=contact_info,
             work_experiences=[
                 WorkExperience(**e) for e in (profile.work_experiences if profile else [])
             ],
@@ -62,7 +63,6 @@ class ProfileRepository(IProfileRepository):
                 Skill(category=s.category, name=s.name, proficiency=s.proficiency)
                 for s in skill_rows
             ],
-            base_resume=base_resume,
         )
 
     async def upsert_profile(self, user_id: uuid.UUID, data: ProfileUpdate) -> None:
@@ -147,24 +147,6 @@ class ProfileRepository(IProfileRepository):
 
         await self._session.commit()
 
-    async def save_base_resume(self, user_id: uuid.UUID, draft: TailoredResumeDraft) -> None:
-        profile = (
-            await self._session.execute(
-                select(UserProfileORM).where(UserProfileORM.user_id == user_id)
-            )
-        ).scalar_one_or_none()
-
-        if profile is None:
-            self._session.add(UserProfileORM(
-                user_id=user_id,
-                base_resume=draft.model_dump(mode="json"),
-            ))
-        else:
-            profile.base_resume = draft.model_dump(mode="json")
-            profile.updated_at = datetime.now(timezone.utc)
-
-        await self._session.commit()
-
     async def append_skills(self, user_id: uuid.UUID, skills: list[Skill]) -> None:
         existing = await self.get_skills(user_id)
         existing_names = {s.name.lower() for s in existing}
@@ -176,7 +158,7 @@ class ProfileRepository(IProfileRepository):
                         user_id=user_id,
                         category=skill.category,
                         name=skill.name,
-                        proficiency=skill.proficiency.value,
+                        proficiency=skill.proficiency.value if skill.proficiency else "",
                     )
                 )
         await self._session.commit()
@@ -191,7 +173,7 @@ class ProfileRepository(IProfileRepository):
                     user_id=user_id,
                     category=skill.category,
                     name=skill.name,
-                    proficiency=skill.proficiency.value,
+                    proficiency=skill.proficiency.value if skill.proficiency else "",
                 )
             )
         await self._session.commit()

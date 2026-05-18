@@ -6,20 +6,22 @@ Do NOT rephrase, shorten, expand, or change a single word.
 Think through the following steps before producing output:
 
 Step 1 — Find project boundaries.
-  Projects are separated by their names/titles. A project name is typically a short noun phrase
-  at the start of an entry, not a bullet and not a date. It may be followed by a URL, tech stack
-  list, or description line before the bullets begin.
+  Each project starts with a short noun-phrase title line (not a bullet, not a date, not a URL).
+  After the title there may be a tech stack line (comma- or pipe-separated technology names).
+  Everything else is bullets.
 
-Step 2 — For each project, classify lines.
-  - name line: the short title of the project.
-  - description line: a one-sentence overview (if present before bullets). Copy verbatim.
-  - bullet lines: contribution/feature sentences. Often start with a verb or "•".
-  - tech lines: lines listing technologies (e.g. "Python | PostgreSQL | Redis" or "Tech: ...").
-  - url: a GitHub/demo link if present.
+Step 2 — Classify lines for each project.
+  - name: the short project title.
+  - tech lines: comma/pipe-separated technology names immediately after the title. Extract into tech_stack.
+  - url: a GitHub or demo link if present.
+  - bullets: ALL remaining content lines are bullets. This includes lines starting with action
+    verbs (Built, Designed, Developed, Architected, etc.). Do NOT put any action sentence into
+    "description" — use description only if there is a non-action overview sentence that is
+    clearly separate from the bullet list (rare). Otherwise leave description as empty string.
 
 Step 3 — Copy bullets verbatim.
-  Include EVERY bullet line for each project in the "bullets" array.
-  Copy each bullet EXACTLY as written — do not omit, merge, split, or rephrase any bullet.
+  Include EVERY bullet for each project. Copy each one EXACTLY as it appears in the input.
+  Do not omit, merge, split, or rephrase any bullet.
 
 Step 4 — Extract tech stack.
   Split tech lines on commas, pipes, or spaces to produce individual technology names.
@@ -29,10 +31,10 @@ Return a JSON object with key "items" containing the array of entries:
   "items": [
     {{
       "name":        "string",
-      "description": "first description line copied verbatim, or empty string",
-      "bullets":     ["exact bullet text", "exact bullet text"],
+      "description": "",
+      "bullets":     ["exact bullet text", "exact bullet text", "exact bullet text"],
       "tech_stack":  ["tech1", "tech2"],
-      "url":         "string or null"
+      "url":         null
     }}
   ]
 }}
@@ -40,4 +42,4 @@ Return a JSON object with key "items" containing the array of entries:
 Projects section text:
 {section_text}
 
-Return only the JSON array.
+Return only the JSON object.

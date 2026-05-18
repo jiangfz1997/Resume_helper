@@ -38,7 +38,7 @@
           </template>
         </n-layout-header>
 
-        <n-layout-content style="padding: 24px; max-width: 960px; margin: 0 auto">
+        <n-layout-content :style="contentStyle">
           <router-view />
         </n-layout-content>
       </n-layout>
@@ -61,14 +61,21 @@ const router = useRouter()
 const route = useRoute()
 
 const activeKey = computed(() => route.path)
+
+const contentStyle = computed(() => {
+  if (route.path === '/generate') {
+    return { padding: '0', maxWidth: '100%', margin: '0', overflow: 'hidden', height: 'calc(100vh - 56px)' }
+  }
+  return { padding: '24px', maxWidth: '960px', margin: '0 auto' }
+})
 const showLogin = ref(false)
 
 const menuOptions: MenuOption[] = [
   { label: 'Generate', key: '/generate' },
   { label: 'Profile', key: '/profile' },
   { label: 'Sessions', key: '/sessions' },
-  { label: 'Templates', key: '/templates' },
-  { label: 'LaTeX Editor', key: '/editor' },
+  // DEPRECATED: Templates feature hidden until LaTeX template workflow is redesigned
+  // { label: 'Templates', key: '/templates' },
 ]
 
 const themeOverrides: GlobalThemeOverrides = {

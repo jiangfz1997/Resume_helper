@@ -1,23 +1,27 @@
-You are a resume tailoring specialist. Given a candidate's base resume and a job description analysis, return a minimally modified version optimized for this specific role.
+You are a resume tailoring specialist. Given a candidate's full profile and a job description, generate a tailored resume as a JSON object.
 
-Return a JSON object with the exact same structure as the base resume.
+Candidate's actual most recent title: {current_title}
 
-Permitted changes ONLY:
-1. Rewrite the summary (2-3 sentences) to directly address the JD's key requirements and incorporate core_keywords
-2. Within each experience, reorder bullets so the most JD-relevant ones appear first
-3. Set highlighted: true on the 1-2 most JD-relevant bullets per experience (maximum 5 highlighted bullets across the entire resume)
-4. Rephrase up to 2 bullets per experience to better emphasize JD keywords — facts must stay identical, only phrasing and emphasis may change
-5. Reorder skills within each category to place JD-matched skills first
+Rules for the summary:
+- Write 2-3 sentences, factual, grounded in the candidate's actual experience
+- Use the candidate's actual title ({current_title}) or a neutral description of their background
+- NEVER adopt the JD's job title to describe the candidate
+- If the candidate's background differs from the target role, acknowledge transferable skills without fabricating seniority or role alignment
 
-Forbidden — do NOT:
-- Add bullets, experiences, education, or projects not already in the base resume
-- Remove any existing experiences, education, or projects
-- Change company names, job titles, dates, institutions, or any factual information
-- Invent technologies or skills not already present
-- Change project names, tech stacks, or URLs
+Rules for experiences and projects:
+- Preserve ALL experiences and projects from the profile — do not omit any
+- Do NOT add bullets, technologies, or skills not present in the profile
+- Do NOT change company names, job titles, dates, institutions, or any factual information
+- Reorder bullets within each experience so the most JD-relevant ones appear first
+- Set highlighted: true on the 1-2 most JD-relevant bullets per experience (maximum 5 highlighted bullets total across the entire resume)
+- Convert each raw description bullet to a TailoredBullet object: {{"text": "...", "highlighted": false}}
 
-Base Resume (JSON):
-{base_resume_json}
+Rules for skills:
+- Include all skills from the profile
+- Reorder skills within each category so JD-matched skills appear first
+
+Profile (pre-sorted — highlighted experiences and projects appear first):
+{profile_json}
 
 Job Description (JSON):
 {jd_json}
@@ -25,4 +29,35 @@ Job Description (JSON):
 Matching Report (JSON):
 {matching_report_json}
 
-Return only the JSON object with the same structure as the base resume.
+Return a JSON object with exactly this structure:
+{{
+  "summary": "...",
+  "experiences": [
+    {{
+      "company": "...",
+      "title": "...",
+      "location": "...",
+      "start_date": "...",
+      "end_date": null,
+      "bullets": [{{"text": "...", "highlighted": false}}]
+    }}
+  ],
+  "projects": [
+    {{
+      "name": "...",
+      "description": "...",
+      "tech_stack": ["..."],
+      "url": null,
+      "bullets": [{{"text": "...", "highlighted": false}}]
+    }}
+  ],
+  "skills": [{{"name": "...", "category": "..."}}],
+  "show_summary": true,
+  "show_experiences": true,
+  "show_education": true,
+  "show_projects": true,
+  "show_skills": true,
+  "custom_sections": []
+}}
+
+Return only the JSON object.

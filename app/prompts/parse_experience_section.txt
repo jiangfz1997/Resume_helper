@@ -11,7 +11,8 @@ Step 1 — Find entry boundaries.
 
 Step 2 — Identify header vs bullet lines.
   Header lines: title, company name, date range, location.
-  Bullet lines: responsibility or achievement sentences (often start with a verb or "•").
+  Bullet lines: responsibility or achievement sentences (start with a capital letter and an
+  action verb, or start with "•"). Each complete sentence (or paragraph) is one bullet.
 
 Step 3 — Extract header fields.
   - title: the job title line.
@@ -21,8 +22,8 @@ Step 3 — Extract header fields.
   - If title and company appear on the same line separated by "|" or "@", split them.
 
 Step 4 — Copy bullets verbatim.
-  For each bullet line, copy the FULL text exactly as written into the "description" array.
-  Do not omit any bullet. Do not merge or split bullets.
+  For each bullet, copy the FULL text exactly into the "description" array.
+  Do not omit any bullet. Do not merge separate bullets or split one bullet into multiple.
 
 Return a JSON object with key "items" containing the array of entries:
 {{
@@ -40,4 +41,4 @@ Return a JSON object with key "items" containing the array of entries:
 Work experience section text:
 {section_text}
 
-Return only the JSON array.
+Return only the JSON object.

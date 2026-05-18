@@ -5,24 +5,18 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.experience_summarizer import ExperienceSummarizer
 from app.agents.jd_analyzer import OllamaJDAnalyzer
-from app.services.latex_compiler import TectonicCompiler
+from app.agents.profile_chat_agent import OllamaProfileChatAgent
 from app.agents.profile_enricher import CodeProfileEnricher
 from app.agents.profile_parser import TwoPhaseProfileParser
-from app.agents.resume_auditor import OllamaResumeAuditor
-from app.agents.content_auditor import OllamaContentAuditor
-from app.agents.resume_generator import OllamaResumeGenerator
+from app.agents.resume_chat_agent import OllamaResumeChatAgent
 from app.agents.skill_matcher import OllamaSkillMatcher
+from app.agents.top_n_selector import TopNSelector
 from app.core.database import get_session
 from app.pipeline.pipeline import ResumePipeline
 from app.pipeline.profile_pipeline import ProfileParsePipeline
-from app.pipeline.tailor_pipeline import TailorPipeline
-from app.pipeline.v2_pipeline import V2ResumePipeline
-from app.agents.base_resume_builder import OllamaBaseResumeBuilder
-from app.agents.content_drafter import OllamaContentDrafter
-from app.agents.resume_tailor import OllamaResumeTailor
-from app.agents.resume_chat_agent import OllamaResumeChatAgent
-from app.agents.profile_chat_agent import OllamaProfileChatAgent
+from app.services.latex_compiler import TectonicCompiler
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.profile_repository import ProfileRepository
 from app.repositories.session_repository import ResumeSessionRepository
@@ -72,8 +66,7 @@ async def get_pipeline(
         profile_manager=ProfileManager(profile_repo),
         jd_analyzer=OllamaJDAnalyzer(),
         skill_matcher=OllamaSkillMatcher(),
-        resume_generator=OllamaResumeGenerator(),
-        resume_auditor=OllamaResumeAuditor(),
+        top_n_selector=TopNSelector(),
     )
 
 
@@ -85,6 +78,7 @@ def get_profile_parse_pipeline() -> ProfileParsePipeline:
     return ProfileParsePipeline(
         parser=TwoPhaseProfileParser(),
         enricher=CodeProfileEnricher(),
+        summarizer=ExperienceSummarizer(),
     )
 
 
@@ -106,29 +100,6 @@ async def get_user_template_repo(
     return UserTemplateRepository(session)
 
 
-def get_content_drafter() -> OllamaContentDrafter:
-    return OllamaContentDrafter()
-
-
-def get_v2_pipeline() -> V2ResumePipeline:
-    return V2ResumePipeline(
-        drafter=OllamaContentDrafter(),
-        auditor=OllamaContentAuditor(),
-    )
-
-
-def get_tailor_pipeline() -> TailorPipeline:
-    return TailorPipeline(
-        jd_analyzer=OllamaJDAnalyzer(),
-        skill_matcher=OllamaSkillMatcher(),
-        tailor=OllamaResumeTailor(),
-    )
-
-
-def get_base_resume_builder() -> OllamaBaseResumeBuilder:
-    return OllamaBaseResumeBuilder()
-
-
 async def get_chat_repo(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ChatRepository:
@@ -141,6 +112,21 @@ def get_chat_agent() -> OllamaResumeChatAgent:
 
 def get_profile_chat_agent() -> OllamaProfileChatAgent:
     return OllamaProfileChatAgent()
+
+
+def get_diagnostic_analyzer():
+    from app.agents.diagnostic_analyzer import DiagnosticAnalyzer
+    return DiagnosticAnalyzer()
+
+
+def get_micro_validator():
+    from app.agents.micro_validator import MicroValidator
+    return MicroValidator()
+
+
+def get_batch_verifier():
+    from app.agents.batch_verifier import BatchVerifier
+    return BatchVerifier()
 
 
 async def get_current_admin_id(

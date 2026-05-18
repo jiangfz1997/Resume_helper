@@ -8,17 +8,20 @@ from app.api.dependencies import (
     get_chat_agent,
     get_chat_repo,
     get_current_user_id,
+    get_profile_repo,
     get_session_repo,
 )
 from app.agents.resume_chat_agent import OllamaResumeChatAgent
 from app.models.data_models import (
     ChatMessage,
     JobDescription,
+    MasterProfile,
     ResumeChatRequest,
     ResumeChatResponse,
     ResumePatch,
 )
 from app.repositories.chat_repository import ChatRepository
+from app.repositories.profile_repository import ProfileRepository
 from app.repositories.session_repository import ResumeSessionRepository
 
 router = APIRouter(prefix="/resume/chat", tags=["chat"])
@@ -34,6 +37,7 @@ async def stream_chat_message(
     user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
     chat_repo: Annotated[ChatRepository, Depends(get_chat_repo)],
     session_repo: Annotated[ResumeSessionRepository, Depends(get_session_repo)],
+    profile_repo: Annotated[ProfileRepository, Depends(get_profile_repo)],
     agent: Annotated[OllamaResumeChatAgent, Depends(get_chat_agent)],
 ) -> StreamingResponse:
     session = await session_repo.get(request.session_id, user_id)
@@ -47,6 +51,8 @@ async def stream_chat_message(
         except Exception:
             jd = None
 
+    profile: MasterProfile | None = await profile_repo.get_profile(user_id)
+
     user_msg = ChatMessage(role="user", content=request.message, scope=request.scope)
     await chat_repo.save_message(request.session_id, user_msg)
 
@@ -55,7 +61,7 @@ async def stream_chat_message(
         reply_text = ""
         patch: ResumePatch | None = None
 
-        async for event in agent.stream_chat(request=request, jd=jd):
+        async for event in agent.stream_chat(request=request, jd=jd, profile=profile):
             yield event
             try:
                 data = _json.loads(event.removeprefix("data: ").strip())
@@ -87,6 +93,7 @@ async def send_chat_message(
     user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
     chat_repo: Annotated[ChatRepository, Depends(get_chat_repo)],
     session_repo: Annotated[ResumeSessionRepository, Depends(get_session_repo)],
+    profile_repo: Annotated[ProfileRepository, Depends(get_profile_repo)],
     agent: Annotated[OllamaResumeChatAgent, Depends(get_chat_agent)],
 ) -> ResumeChatResponse:
     session = await session_repo.get(request.session_id, user_id)
@@ -100,6 +107,8 @@ async def send_chat_message(
         except Exception:
             jd = None
 
+    profile: MasterProfile | None = await profile_repo.get_profile(user_id)
+
     user_msg = ChatMessage(
         role="user",
         content=request.message,
@@ -107,7 +116,7 @@ async def send_chat_message(
     )
     await chat_repo.save_message(request.session_id, user_msg)
 
-    response = await agent.chat(request=request, jd=jd)
+    response = await agent.chat(request=request, jd=jd, profile=profile)
 
     await chat_repo.save_message(request.session_id, response.message)
 

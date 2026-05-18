@@ -3,7 +3,7 @@ from typing import Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from app.interfaces.base import IProfileEnricher, IProfileParser
+from app.interfaces.base import IExperienceSummarizer, IProfileEnricher, IProfileParser
 from app.models.data_models import ParsedProfileDraft
 
 logger = logging.getLogger(__name__)
@@ -15,18 +15,26 @@ class _GraphState(TypedDict):
 
 
 class ProfileParsePipeline:
-    def __init__(self, parser: IProfileParser, enricher: IProfileEnricher) -> None:
+    def __init__(
+        self,
+        parser: IProfileParser,
+        enricher: IProfileEnricher,
+        summarizer: IExperienceSummarizer,
+    ) -> None:
         self._parser = parser
         self._enricher = enricher
+        self._summarizer = summarizer
         self._graph = self._build_graph()
 
     def _build_graph(self) -> object:
         graph: StateGraph = StateGraph(_GraphState)  # type: ignore[type-arg]
         graph.add_node("parse", self._parse_node)  # type: ignore[arg-type]
         graph.add_node("enrich", self._enrich_node)  # type: ignore[arg-type]
+        graph.add_node("summarize", self._summarize_node)  # type: ignore[arg-type]
         graph.set_entry_point("parse")
         graph.add_edge("parse", "enrich")
-        graph.add_edge("enrich", END)
+        graph.add_edge("enrich", "summarize")
+        graph.add_edge("summarize", END)
         return graph.compile()
 
     async def _parse_node(self, state: _GraphState) -> dict:
@@ -49,13 +57,25 @@ class ProfileParsePipeline:
         )
         return {"draft": enriched}
 
+    async def _summarize_node(self, state: _GraphState) -> dict:
+        draft: ParsedProfileDraft = state["draft"]
+        logger.debug(
+            "node:summarize | exp=%d proj=%d",
+            len(draft.work_experiences), len(draft.projects),
+        )
+        summarized = await self._summarizer.summarize(draft)
+        logger.debug("node:summarize | done")
+        return {"draft": summarized}
+
     async def run(self, raw_text: str) -> ParsedProfileDraft:
         if not raw_text.strip():
             raise ValueError("PDF text is empty")
         initial_state: _GraphState = {"raw_text": raw_text, "draft": None}
         from app.pipeline._studio import _invoke
         final_state = await _invoke("profile_parse", self._graph, initial_state)
-        draft: Optional[ParsedProfileDraft] = final_state["draft"]
-        if draft is None:
+        draft_raw = final_state["draft"]
+        if draft_raw is None:
             raise ValueError("Profile parsing pipeline failed to produce a result")
-        return draft
+        if isinstance(draft_raw, dict):
+            return ParsedProfileDraft.model_validate(draft_raw)
+        return draft_raw

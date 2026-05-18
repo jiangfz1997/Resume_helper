@@ -10,14 +10,11 @@
           <n-button :loading="viewLoading" @click="fetchProfile">Refresh</n-button>
           <template v-if="profile">
             <n-divider />
-            <n-descriptions label-placement="left" bordered :column="1">
-              <n-descriptions-item label="Name">{{ profile.full_name }}</n-descriptions-item>
-              <n-descriptions-item label="Summary">{{ profile.summary ?? '—' }}</n-descriptions-item>
-              <n-descriptions-item label="Skills">{{ profile.skills.length }}</n-descriptions-item>
-              <n-descriptions-item label="Experiences">{{ profile.work_experiences.length }}</n-descriptions-item>
-              <n-descriptions-item label="Education">{{ profile.educations.length }}</n-descriptions-item>
-              <n-descriptions-item label="Projects">{{ profile.projects.length }}</n-descriptions-item>
-            </n-descriptions>
+            <div style="margin-bottom: 20px">
+              <n-text style="font-size: 22px; font-weight: 700; display: block">{{ profile.full_name }}</n-text>
+              <n-text v-if="profile.summary" depth="2" style="display: block; margin-top: 8px; line-height: 1.7; white-space: pre-wrap">{{ profile.summary }}</n-text>
+              <n-text v-else depth="3" style="display: block; margin-top: 8px; font-size: 12px; font-style: italic">No summary yet.</n-text>
+            </div>
 
             <template v-if="profile.work_experiences.length">
               <n-divider title-placement="left">Work Experience</n-divider>
@@ -204,7 +201,39 @@
 
       <!-- ── Edit ── -->
       <n-tab-pane name="edit" tab="Edit">
+        <div @mouseup="onEditMouseUp">
         <n-space vertical size="medium" style="margin-top: 12px">
+
+          <!-- Basic Info -->
+          <n-card title="Basic Info">
+            <n-form-item label="Full Name" label-placement="top" :show-feedback="false">
+              <n-input v-model:value="editData.full_name" placeholder="Your full name" />
+            </n-form-item>
+          </n-card>
+
+          <!-- Contact Info -->
+          <n-card title="Contact Info">
+            <n-grid :cols="2" :x-gap="12" :y-gap="8">
+              <n-gi><n-form-item label="Email" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.email" placeholder="you@example.com" size="small" />
+              </n-form-item></n-gi>
+              <n-gi><n-form-item label="Phone" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.phone" placeholder="+1 555 000 0000" size="small" />
+              </n-form-item></n-gi>
+              <n-gi :span="2"><n-form-item label="Location" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.location" placeholder="City, Province / State, Country" size="small" />
+              </n-form-item></n-gi>
+              <n-gi><n-form-item label="LinkedIn" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.linkedin" placeholder="linkedin.com/in/yourname" size="small" />
+              </n-form-item></n-gi>
+              <n-gi><n-form-item label="GitHub" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.github" placeholder="github.com/yourname" size="small" />
+              </n-form-item></n-gi>
+              <n-gi :span="2"><n-form-item label="Website" label-placement="top" :show-feedback="false">
+                <n-input v-model:value="editData.contact_info.website" placeholder="https://yoursite.com" size="small" />
+              </n-form-item></n-gi>
+            </n-grid>
+          </n-card>
 
           <!-- Summary -->
           <n-card title="Summary">
@@ -521,6 +550,7 @@
           <n-button type="primary" :loading="editLoading" @click="saveEdit">Save Profile</n-button>
 
         </n-space>
+        </div>
       </n-tab-pane>
 
       <!-- ── Base Resume ── -->
@@ -674,27 +704,80 @@
         </n-card>
       </n-tab-pane>
 
+      <!-- ── Dev Import ── -->
+      <n-tab-pane name="dev" tab="Dev Import">
+        <n-card style="margin-top: 12px">
+          <n-space vertical size="large">
+            <n-space align="center" justify="space-between">
+              <n-text style="font-size: 13px; font-weight: 600">Dev Tools</n-text>
+              <n-popconfirm @positive-click="runClearProfile">
+                <template #trigger>
+                  <n-button size="small" type="error" :loading="clearLoading">Clear All Profile Data</n-button>
+                </template>
+                This will wipe all work experiences, projects, educations, and skills. Continue?
+              </n-popconfirm>
+            </n-space>
+            <n-alert v-if="clearError" type="error">{{ clearError }}</n-alert>
+            <n-alert v-if="clearSuccess" type="success">{{ clearSuccess }}</n-alert>
+            <n-divider style="margin: 4px 0" />
+            <n-text depth="3" style="font-size:12px">
+              Paste mock_exp.json content (format: {"{"} projects: [...], works: [...] {"}"}) and click Import. Replaces current profile experiences and projects.
+            </n-text>
+            <n-input
+              v-model:value="mockJson"
+              type="textarea"
+              :autosize="{ minRows: 12, maxRows: 24 }"
+              placeholder="Paste JSON here..."
+              style="font-family: monospace; font-size: 12px"
+            />
+            <n-space>
+              <n-button
+                type="primary"
+                :loading="mockImporting"
+                :disabled="!mockJson.trim()"
+                @click="runMockImport"
+              >Import</n-button>
+              <n-button @click="mockJson = ''">Clear</n-button>
+            </n-space>
+            <n-alert v-if="mockImportError" type="error">{{ mockImportError }}</n-alert>
+            <n-alert v-if="mockImportSuccess" type="success">{{ mockImportSuccess }}</n-alert>
+          </n-space>
+        </n-card>
+      </n-tab-pane>
+
     </n-tabs>
   </div>
+
+  <button
+    v-if="selectionBtn"
+    ref="quoteButtonRef"
+    class="selection-quote-btn"
+    :style="{ left: selectionBtn.x + 'px', top: (selectionBtn.y - 38) + 'px' }"
+    @click="quoteSelection"
+  >
+    Quote
+  </button>
 
   <ProfileChatPanel ref="profileChatPanelRef" @patch="applyProfilePatch" />
 </template>
 
 <script setup lang="ts">
 import type { SelectOption, UploadFileInfo } from 'naive-ui'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 type IndexedSkill = Skill & { _idx: number }
 import {
   confirmParsedDraft,
   generateBaseResume,
   getProfile,
+  injectMockProfile,
   replaceSkills,
   saveBaseResume,
   updateProfile as apiUpdateProfile,
+  updateUserMe,
   uploadResumePDF,
 } from '../api/client'
-import type { Education, MasterProfile, ParsedProfileDraft, ProficiencyLevel, Project, Skill, TailoredResumeDraft, WorkExperience } from '../api/client'
+import type { ContactInfo, Education, MasterProfile, ParsedProfileDraft, ProficiencyLevel, Project, Skill, TailoredResumeDraft, WorkExperience } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import ProfileChatPanel from '../components/ProfileChatPanel.vue'
 import type { ProfileChatInit } from '../components/ProfileChatPanel.vue'
@@ -742,7 +825,10 @@ async function fetchProfile(): Promise<void> {
   }
 }
 
-onMounted(fetchProfile)
+onMounted(() => {
+  fetchProfile()
+  document.addEventListener('mousedown', onDocMouseDown)
+})
 
 // ── upload pdf ─────────────────────────────────────────────────
 type PdfStage = 'pick' | 'preview' | 'done'
@@ -803,7 +889,9 @@ function goToView(): void {
 
 // ── edit ───────────────────────────────────────────────────────
 interface EditData {
+  full_name: string
   summary: string
+  contact_info: ContactInfo
   work_experiences: WorkExperience[]
   educations: Education[]
   projects: Project[]
@@ -811,7 +899,9 @@ interface EditData {
 }
 
 const editData = reactive<EditData>({
+  full_name: '',
   summary: '',
+  contact_info: {},
   work_experiences: [],
   educations: [],
   projects: [],
@@ -825,7 +915,9 @@ const editSuccess = ref('')
 
 function populateEdit(): void {
   if (!profile.value) return
+  editData.full_name = profile.value.full_name
   editData.summary = profile.value.summary ?? ''
+  editData.contact_info = { ...(profile.value.contact_info ?? {}) }
   editData.work_experiences = profile.value.work_experiences.map(e => ({
     ...e,
     description: [...e.description],
@@ -941,8 +1033,21 @@ async function saveEdit(): Promise<void> {
   editSuccess.value = ''
   editLoading.value = true
   try {
+    if (editData.full_name.trim() && editData.full_name !== profile.value?.full_name) {
+      await updateUserMe(token(), { full_name: editData.full_name.trim() })
+    }
+    const ci = editData.contact_info
+    const contactInfoPayload: ContactInfo = {
+      email: ci.email || undefined,
+      phone: ci.phone || undefined,
+      location: ci.location || undefined,
+      linkedin: ci.linkedin || undefined,
+      github: ci.github || undefined,
+      website: ci.website || undefined,
+    }
     await apiUpdateProfile(token(), {
       summary: editData.summary || undefined,
+      contact_info: contactInfoPayload,
       work_experiences: editData.work_experiences.map(e => ({
         ...e,
         end_date: e.end_date || undefined,
@@ -1019,6 +1124,47 @@ async function runSaveBase(): Promise<void> {
     baseSaveLoading.value = false
   }
 }
+
+// ── text selection quote ────────────────────────────────────────
+interface SelectionBtn {
+  x: number
+  y: number
+  text: string
+}
+const selectionBtn = ref<SelectionBtn | null>(null)
+const quoteButtonRef = ref<HTMLElement | null>(null)
+
+function onEditMouseUp(e: MouseEvent): void {
+  const target = e.target as HTMLElement
+  if (!(target instanceof HTMLTextAreaElement)) return
+  const start = target.selectionStart ?? 0
+  const end = target.selectionEnd ?? 0
+  if (start === end) {
+    selectionBtn.value = null
+    return
+  }
+  const text = target.value.substring(start, end).trim()
+  if (!text) {
+    selectionBtn.value = null
+    return
+  }
+  selectionBtn.value = { x: e.clientX, y: e.clientY, text }
+}
+
+function quoteSelection(): void {
+  if (!selectionBtn.value) return
+  profileChatPanelRef.value?.openWithSelection(selectionBtn.value.text)
+  selectionBtn.value = null
+}
+
+function onDocMouseDown(e: MouseEvent): void {
+  if (quoteButtonRef.value && quoteButtonRef.value.contains(e.target as Node)) return
+  selectionBtn.value = null
+}
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onDocMouseDown)
+})
 
 // ── profile AI chat ─────────────────────────────────────────────
 const profileChatPanelRef = ref<InstanceType<typeof ProfileChatPanel> | null>(null)
@@ -1120,4 +1266,79 @@ function applyProfilePatch(path: string, updatedValue: unknown): void {
     editData.skills = updatedValue as Skill[]
   }
 }
+
+// ── dev import ─────────────────────────────────────────────────
+const mockJson = ref('')
+const mockImporting = ref(false)
+const mockImportError = ref('')
+const mockImportSuccess = ref('')
+
+const clearLoading = ref(false)
+const clearError = ref('')
+const clearSuccess = ref('')
+
+async function runClearProfile(): Promise<void> {
+  clearError.value = ''
+  clearSuccess.value = ''
+  clearLoading.value = true
+  try {
+    await apiUpdateProfile(token(), {
+      work_experiences: [],
+      educations: [],
+      projects: [],
+      summary: '',
+    })
+    await replaceSkills(token(), [])
+    await fetchProfile()
+    clearSuccess.value = 'Profile cleared.'
+  } catch (e: unknown) {
+    clearError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    clearLoading.value = false
+  }
+}
+
+async function runMockImport(): Promise<void> {
+  mockImportError.value = ''
+  mockImportSuccess.value = ''
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(mockJson.value)
+  } catch {
+    mockImportError.value = 'Invalid JSON'
+    return
+  }
+  mockImporting.value = true
+  try {
+    const result = await injectMockProfile(token(), JSON.stringify(parsed))
+    profile.value = result
+    mockImportSuccess.value = `Imported: ${result.work_experiences.length} work experiences, ${result.projects.length} projects, ${result.skills.length} skills`
+  } catch (e: unknown) {
+    mockImportError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    mockImporting.value = false
+  }
+}
 </script>
+
+<style scoped>
+.selection-quote-btn {
+  position: fixed;
+  z-index: 2000;
+  background: #52c41a;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.selection-quote-btn:hover {
+  background: #389e0d;
+}
+</style>
