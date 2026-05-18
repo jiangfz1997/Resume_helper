@@ -225,24 +225,6 @@ class MatchingReport(BaseModel):
     tech_coverage: list[TechCoverageItem] = Field(default_factory=list)
 
 
-class AuditFeedback(BaseModel):
-    score: float = Field(ge=0.0, le=1.0)
-    suggestions: list[str] = Field(default_factory=list)
-    approved: bool
-    keyword_match_score: float = 0.0          # weighted composite
-    required_keyword_coverage: float = 0.0    # tech_keywords hit rate
-
-
-class DraftResume(BaseModel):
-    latex_content: str
-    iteration: int = 0
-
-
-class PipelineStatus(str, Enum):
-    in_progress = "in_progress"
-    approved = "approved"
-    max_retries_reached = "max_retries_reached"
-
 
 class PipelineConfig(BaseModel):
     initial_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
@@ -250,12 +232,6 @@ class PipelineConfig(BaseModel):
     min_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_retries: int = Field(default=1, ge=1)
 
-
-class PipelineState(BaseModel):
-    retry_count: int = 0
-    best_score: float = 0.0
-    best_draft: Optional[DraftResume] = None
-    status: PipelineStatus = PipelineStatus.in_progress
 
 
 class CompileRequest(BaseModel):
@@ -328,18 +304,6 @@ class TailorFullRequest(BaseModel):
     template_source: Optional[Literal["global", "user"]] = None
     selected_experience_indices: Optional[list[int]] = None
     selected_project_indices: Optional[list[int]] = None
-
-
-class ResumeRequest(BaseModel):
-    jd_text: str
-    config: PipelineConfig = Field(default_factory=PipelineConfig)
-
-
-class ResumeResponse(BaseModel):
-    latex_content: str
-    score: float
-    retries: int
-    status: PipelineStatus
 
 
 # ── v2 models ──────────────────────────────────────────
@@ -508,11 +472,6 @@ class ProfileChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = Field(default_factory=list)
 
-
-class IntentResult(BaseModel):
-    intent: Literal["local_patch", "keyword_inject", "full_diagnose", "question"]
-    keyword: Optional[str] = None
-    target_path: Optional[str] = None
 
 
 # ── copilot / diagnostic models ────────────────────────────────

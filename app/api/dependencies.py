@@ -28,6 +28,14 @@ from app.services.template_filler import TemplateFiller
 
 _bearer = HTTPBearer()
 
+_chat_agent: OllamaResumeChatAgent | None = None
+_profile_chat_agent: OllamaProfileChatAgent | None = None
+_profile_parse_pipeline: ProfileParsePipeline | None = None
+_latex_compiler: TectonicCompiler | None = None
+_diagnostic_analyzer = None
+_micro_validator = None
+_batch_verifier = None
+
 
 async def get_user_repo(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -71,15 +79,21 @@ async def get_pipeline(
 
 
 def get_latex_compiler() -> TectonicCompiler:
-    return TectonicCompiler()
+    global _latex_compiler
+    if _latex_compiler is None:
+        _latex_compiler = TectonicCompiler()
+    return _latex_compiler
 
 
 def get_profile_parse_pipeline() -> ProfileParsePipeline:
-    return ProfileParsePipeline(
-        parser=TwoPhaseProfileParser(),
-        enricher=CodeProfileEnricher(),
-        summarizer=ExperienceSummarizer(),
-    )
+    global _profile_parse_pipeline
+    if _profile_parse_pipeline is None:
+        _profile_parse_pipeline = ProfileParsePipeline(
+            parser=TwoPhaseProfileParser(),
+            enricher=CodeProfileEnricher(),
+            summarizer=ExperienceSummarizer(),
+        )
+    return _profile_parse_pipeline
 
 
 async def get_session_repo(
@@ -107,26 +121,41 @@ async def get_chat_repo(
 
 
 def get_chat_agent() -> OllamaResumeChatAgent:
-    return OllamaResumeChatAgent()
+    global _chat_agent
+    if _chat_agent is None:
+        _chat_agent = OllamaResumeChatAgent()
+    return _chat_agent
 
 
 def get_profile_chat_agent() -> OllamaProfileChatAgent:
-    return OllamaProfileChatAgent()
+    global _profile_chat_agent
+    if _profile_chat_agent is None:
+        _profile_chat_agent = OllamaProfileChatAgent()
+    return _profile_chat_agent
 
 
 def get_diagnostic_analyzer():
-    from app.agents.diagnostic_analyzer import DiagnosticAnalyzer
-    return DiagnosticAnalyzer()
+    global _diagnostic_analyzer
+    if _diagnostic_analyzer is None:
+        from app.agents.diagnostic_analyzer import DiagnosticAnalyzer
+        _diagnostic_analyzer = DiagnosticAnalyzer()
+    return _diagnostic_analyzer
 
 
 def get_micro_validator():
-    from app.agents.micro_validator import MicroValidator
-    return MicroValidator()
+    global _micro_validator
+    if _micro_validator is None:
+        from app.agents.micro_validator import MicroValidator
+        _micro_validator = MicroValidator()
+    return _micro_validator
 
 
 def get_batch_verifier():
-    from app.agents.batch_verifier import BatchVerifier
-    return BatchVerifier()
+    global _batch_verifier
+    if _batch_verifier is None:
+        from app.agents.batch_verifier import BatchVerifier
+        _batch_verifier = BatchVerifier()
+    return _batch_verifier
 
 
 async def get_current_admin_id(
