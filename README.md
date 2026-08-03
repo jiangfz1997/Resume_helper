@@ -18,7 +18,7 @@ An LLM-powered resume tailoring system built with FastAPI, LangGraph, and Vue 3.
 |---|---|
 | Backend | Python 3.11, FastAPI, SQLAlchemy (async), PostgreSQL |
 | LLM Orchestration | LangGraph, LangChain Core |
-| LLM Provider | Google Gemini (Flash / Flash Lite via `langchain-google-genai`) |
+| LLM Provider | Google Gemini (Flash / Flash Lite) by default; OpenAI or Ollama selectable per agent |
 | PDF Parsing | PyMuPDF |
 | Frontend | Vue 3, Vite, Naive UI, TypeScript |
 | Auth | JWT (python-jose), bcrypt (pwdlib) |
@@ -41,24 +41,32 @@ app/
     data_models.py  # All Pydantic request/response/domain models
     db_models.py    # SQLAlchemy ORM models
   pipeline/
-    pipeline.py        # ResumePipeline (LangGraph: load_profile → analyze_jd → match_skills)
-    profile_pipeline.py # ProfileParsePipeline (LangGraph: parse → enrich)
+    pipeline.py        # ResumePipeline (LangGraph: load_profile → analyze_jd → select_top_n → match_skills)
+    profile_pipeline.py # ProfileParsePipeline (LangGraph: parse → enrich → summarize)
   prompts/          # LLM prompt templates (.txt files)
   repositories/     # Database access layer
-  services/         # Pure-Python helpers (KeywordScorer, tier1_checker, ProfileManager)
+  services/         # Non-agent helpers (KeywordScorer, tier1_checker, ProfileManager,
+                    # ResumeRenderer, PdfExporter)
 frontend-vue/       # Vue 3 frontend
 agents.yaml         # Model configuration per agent
+init.sql            # Database schema (no migration tool; see below)
+docker-compose.yml  # PostgreSQL service for local development
 ```
 
 ## Prerequisites
 
 - Python 3.11+
 - Node.js 20+
-- PostgreSQL 14+
-- Google Gemini API key (set `GOOGLE_API_KEY` env var)
-- Two Gemini model env vars:
+- PostgreSQL 14+ (or Docker, to run the bundled `postgres:16-alpine` service)
+- An API key for one LLM provider. The default is Google Gemini:
+  - `GOOGLE_API_KEY`
   - `GOOGLE_FLASH_MODEL` — e.g. `gemini-2.0-flash`
   - `GOOGLE_FLASH_LITE_MODEL` — e.g. `gemini-2.0-flash-lite`
+
+To use OpenAI instead of Gemini, set `LLM_PROVIDER=openai` plus `OPENAI_API_KEY`,
+`OPENAI_FAST_MODEL` and `OPENAI_SMART_MODEL`. Every agent is remapped through the
+`openai.agents` section of [`agents.yaml`](agents.yaml); no code changes are needed.
+See [`.env.example`](.env.example) for the full list of variables.
 
 ## Local Development Setup
 
@@ -77,14 +85,33 @@ playwright install chromium
 
 # Configure environment
 cp .env.example .env
-# Edit .env: set DATABASE_URL, GOOGLE_API_KEY, GOOGLE_FLASH_MODEL, GOOGLE_FLASH_LITE_MODEL, SECRET_KEY
+# Edit .env: set POSTGRES_*, DATABASE_URL, JWT_SECRET_KEY, GOOGLE_API_KEY,
+# GOOGLE_FLASH_MODEL, GOOGLE_FLASH_LITE_MODEL
 
-# Run database migrations (Alembic)
-alembic upgrade head
+# Start PostgreSQL. On first run the container executes init.sql automatically,
+# which creates every table.
+docker compose up -d
 
 # Start backend
 uvicorn main:app --reload --port 8000
 ```
+
+### Database schema
+
+This project has no migration tool. [`init.sql`](init.sql) is the single source of
+truth for the schema and is kept in sync with the SQLAlchemy models in
+[`app/models/db_models.py`](app/models/db_models.py) by hand.
+
+`docker compose up` applies it only when the `pgdata` volume is created. Against an
+existing or hosted database, apply it yourself:
+
+```bash
+# psql does not understand the "+asyncpg" dialect prefix used by DATABASE_URL.
+psql "postgresql://USER:PASSWORD@HOST:5432/resume_db" -f init.sql
+```
+
+Every statement is `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, so
+re-running it is safe. It contains schema only — no seed data.
 
 ### Frontend
 
@@ -115,39 +142,67 @@ agents:
 |---|---|---|
 | POST | `/auth/register` | Register new user |
 | POST | `/auth/login` | Get JWT token |
-| GET/PUT | `/profile/me` | Get or update master profile |
+| GET/PUT | `/users/me` | Get or update the current account |
+| GET/PUT | `/profile/` | Get or update master profile |
+| POST/PUT | `/profile/skills` | Append to or replace the skill list |
 | POST | `/profile/upload-pdf` | Parse PDF resume |
 | POST | `/profile/upload-pdf/confirm` | Confirm and persist parsed draft |
+| POST | `/profile/chat/stream` | Streaming chat for profile editing (SSE) |
+| POST | `/profile/inject-mock` | Load a sample profile (development helper) |
 | POST | `/resume/analyze` | Analyze JD and compute skill match |
-| POST | `/resume/confirm-generate` | Generate tailored resume draft |
+| POST | `/resume/confirm` | Generate tailored resume draft |
+| POST | `/resume/tailor-one` | Re-tailor a single section |
+| POST | `/resume/tailor-full` | Re-tailor the whole draft |
 | POST | `/resume/preview-html` | Render draft to HTML |
 | POST | `/resume/export-pdf` | Export draft to PDF |
 | POST | `/resume/chat/stream` | Streaming chat with resume assistant (SSE) |
+| POST | `/resume/chat` | Non-streaming chat, returns the patch in one response |
+| GET | `/resume/chat/{session_id}` | Chat history for a session |
+| POST | `/resume/chat/{session_id}/undo` | Revert the last chat-applied patch |
 | GET | `/sessions` | List resume sessions |
 | GET | `/sessions/{id}` | Get session detail with draft |
 | PATCH | `/sessions/{id}/draft` | Save manual draft edits |
+| DELETE | `/sessions/{id}` | Delete a session |
 | POST | `/copilot/diagnose` | Full three-tier resume diagnostic |
 | POST | `/copilot/micro-validate` | Single bullet condition check |
 | POST | `/copilot/batch-verify` | Verify if edits resolve pending tasks |
 
+`/resume/render`, `/resume/compile` and the `/templates/*` routes are registered but
+marked deprecated: they belong to the retired LaTeX/Tectonic rendering path and are
+superseded by `/resume/preview-html` and `/resume/export-pdf`.
+
 ## Multi-Agent Architecture
 
-The system implements four distinct multi-agent workflows. Full details are in [`tmp_doc/workflow.md`](tmp_doc/workflow.md).
+The system implements four distinct multi-agent workflows.
 
-**Workflow 1 — Profile Import:** `TwoPhaseProfileParser` (Flash Lite x2) + `CodeProfileEnricher` (rule-based), orchestrated by LangGraph.
+**Workflow 1 — Profile Import:** LangGraph `ProfileParsePipeline` runs `parse` → `enrich` →
+`summarize`: `TwoPhaseProfileParser` (Flash Lite; one header-detection call plus four
+parallel section calls), then `CodeProfileEnricher` (rule-based, no LLM), then
+`ExperienceSummarizer` (Flash).
 
-**Workflow 2 — Resume Generation:** `OllamaJDAnalyzer` → `OllamaSkillMatcher` → `OllamaResumeTailor`, all Flash models, orchestrated by LangGraph (`ResumePipeline`).
+**Workflow 2 — Resume Generation:** LangGraph `ResumePipeline` runs `load_profile` →
+`analyze_jd` → `select_top_n` → `match_skills`, using `OllamaJDAnalyzer`, `TopNSelector`
+and `OllamaSkillMatcher` (all Flash). Tailoring is a separate step: `POST /resume/confirm`
+invokes `OllamaResumeTailor` directly, outside the graph.
 
 **Workflow 3 — Chat Assistant:** `OllamaResumeChatAgent` with internal intent routing. Router (Flash Lite, structured output) dispatches to `local_patch` / `keyword_inject` / `full_diagnose` / `question` handlers. `full_diagnose` reuses the Copilot `DiagnosticAnalyzer`.
 
 **Workflow 4 — Copilot Panel:** `tier1_checker` (rule-based) + `DiagnosticAnalyzer` (Flash) + `MicroValidator` (Flash Lite) + `BatchVerifier` (Flash), orchestrated directly by the API route.
 
+The `Ollama*` class-name prefix is historical — those agents were first written against a
+local Ollama server. They now build their model through `ModelFactory` like every other
+agent, so the prefix says nothing about which provider is in use.
+
 ## Deployment
 
-Docker and CI/CD support are planned. See [`tmp_doc/`](tmp_doc/) for architecture documentation.
+[`docker-compose.yml`](docker-compose.yml) provisions PostgreSQL only; there is no
+application image or CI pipeline yet.
 
 For manual deployment, the backend requires:
-- A PostgreSQL database accessible via `DATABASE_URL`
-- Gemini API access via `GOOGLE_API_KEY`
+- A PostgreSQL database accessible via `DATABASE_URL`, with [`init.sql`](init.sql) applied
+- Gemini API access via `GOOGLE_API_KEY` (or OpenAI via `LLM_PROVIDER=openai`)
+- `DEBUG=false`, a generated `JWT_SECRET_KEY`, and `CORS_ORIGINS` listing the frontend
+  origin — the app refuses to start if the secret is left at its default or `CORS_ORIGINS`
+  contains `*`
 - Playwright Chromium installed in the runtime environment for PDF export
 - Frontend static files built via `npm run build` and served via a reverse proxy (nginx) pointing `/api` to the FastAPI backend

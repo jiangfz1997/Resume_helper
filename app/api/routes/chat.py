@@ -11,7 +11,7 @@ from app.api.dependencies import (
     get_profile_repo,
     get_session_repo,
 )
-from app.agents.resume_chat_agent import OllamaResumeChatAgent
+from app.agents.resume_chat_agent import OllamaResumeChatAgent, _apply_patch_value
 from app.models.data_models import (
     ChatMessage,
     JobDescription,
@@ -19,6 +19,7 @@ from app.models.data_models import (
     ResumeChatRequest,
     ResumeChatResponse,
     ResumePatch,
+    TailoredResumeDraft,
 )
 from app.repositories.chat_repository import ChatRepository
 from app.repositories.profile_repository import ProfileRepository
@@ -71,6 +72,7 @@ async def stream_chat_message(
                     patch = ResumePatch(
                         path=data["path"],
                         updated_value=data["updated_value"],
+                        previous_value=data.get("previous_value"),
                         diff_summary=data["diff_summary"],
                     )
             except Exception:
@@ -83,6 +85,9 @@ async def stream_chat_message(
             patch=patch,
         )
         await chat_repo.save_message(request.session_id, assistant_msg)
+
+        if patch is not None:
+            await session_repo.update_draft(request.session_id, request.draft)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -109,18 +114,46 @@ async def send_chat_message(
 
     profile: MasterProfile | None = await profile_repo.get_profile(user_id)
 
-    user_msg = ChatMessage(
-        role="user",
-        content=request.message,
-        scope=request.scope,
-    )
+    user_msg = ChatMessage(role="user", content=request.message, scope=request.scope)
     await chat_repo.save_message(request.session_id, user_msg)
 
     response = await agent.chat(request=request, jd=jd, profile=profile)
-
     await chat_repo.save_message(request.session_id, response.message)
 
+    if response.patch is not None:
+        await session_repo.update_draft(request.session_id, request.draft)
+
     return response
+
+
+@router.post("/{session_id}/undo", response_model=TailoredResumeDraft)
+async def undo_last_patch(
+    session_id: uuid.UUID,
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+    chat_repo: Annotated[ChatRepository, Depends(get_chat_repo)],
+    session_repo: Annotated[ResumeSessionRepository, Depends(get_session_repo)],
+) -> TailoredResumeDraft:
+    session = await session_repo.get(session_id, user_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if not session.tailored_draft_json:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No draft to undo")
+
+    history = await chat_repo.get_history(session_id)
+    last_patch: ResumePatch | None = None
+    for msg in reversed(history):
+        if msg.patch and msg.patch.previous_value is not None:
+            last_patch = msg.patch
+            break
+
+    if last_patch is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nothing to undo")
+
+    draft = TailoredResumeDraft.model_validate(session.tailored_draft_json)
+    _apply_patch_value(draft, last_patch.path, last_patch.previous_value)
+    await session_repo.update_draft(session_id, draft)
+
+    return draft
 
 
 @router.get("/{session_id}", response_model=list[ChatMessage])

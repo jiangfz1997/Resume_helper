@@ -630,6 +630,7 @@ export interface ChatScope {
 export interface ResumePatch {
   path: string
   updated_value: unknown
+  previous_value?: unknown
   diff_summary: string
 }
 
@@ -668,10 +669,14 @@ export function getChatHistory(sessionId: string, token: string): Promise<ChatMe
   return request(`/resume/chat/${sessionId}`, {}, token)
 }
 
+export function undoLastPatch(sessionId: string, token: string): Promise<TailoredResumeDraft> {
+  return request(`/resume/chat/${sessionId}/undo`, { method: 'POST' }, token)
+}
+
 export type StreamEvent =
   | { type: 'intent'; value: string }
   | { type: 'token'; content: string }
-  | { type: 'patch'; path: string; updated_value: unknown; diff_summary: string }
+  | { type: 'patch'; path: string; updated_value: unknown; previous_value?: unknown; diff_summary: string }
   | { type: 'done'; reply: string }
 
 export interface ProfileChatRequest {

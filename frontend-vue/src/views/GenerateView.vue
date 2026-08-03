@@ -814,7 +814,7 @@
             :session-id="currentSessionId"
             :draft="draft"
             :pending-scope-init="pendingScope ?? undefined"
-            @patch="handlePatch"
+            @undo="handleUndo"
           />
         </div>
 
@@ -850,7 +850,6 @@ import { useMessage } from 'naive-ui'
 import { analyzeJD, batchVerify, confirmGenerate, defaultLayoutSettings, diagnose, getProfile, getSession, microValidate, tailorOneItem, tailorFull, updateSessionDraft } from '../api/client'
 import type {
   BatchVerifyResponse,
-  CategoryMatchResult,
   ChatScope,
   DiagnosticReport,
   DiagnosticTask,
@@ -860,7 +859,6 @@ import type {
   MasterProfile,
   MatchingPreview,
   PipelineConfig,
-  ResumePatch,
   SkillGapSuggestion,
   TailoredResumeDraft,
   WorkExperience,
@@ -1476,29 +1474,9 @@ function discussInChat(task: DiagnosticTask): void {
   chatPanelRef.value?.prefill(prefillParts.join(''))
 }
 
-function handlePatch(patch: ResumePatch): void {
+function handleUndo(restoredDraft: TailoredResumeDraft): void {
   if (!draft.value) return
-  if (patch.path === 'summary') {
-    draft.value.summary = patch.updated_value as string
-    return
-  }
-  const mb = patch.path.match(/^(experiences|projects)\[(\d+)\]\.bullets\[(\d+)\]$/)
-  if (mb) {
-    const field = mb[1] as 'experiences' | 'projects'
-    const itemIdx = parseInt(mb[2])
-    const bulletIdx = parseInt(mb[3])
-    const item = (draft.value[field] as Array<{ bullets: Array<{ text: string }> }>)[itemIdx]
-    if (item?.bullets[bulletIdx] != null) {
-      item.bullets[bulletIdx].text = patch.updated_value as string
-    }
-    return
-  }
-  const m = patch.path.match(/^(experiences|projects)\[(\d+)\]$/)
-  if (m) {
-    const field = m[1] as 'experiences' | 'projects'
-    const idx = parseInt(m[2])
-    ;(draft.value[field] as unknown[])[idx] = patch.updated_value
-  }
+  draft.value = restoredDraft
 }
 
 async function saveDraft(): Promise<void> {

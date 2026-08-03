@@ -76,6 +76,21 @@ def _extract_section(draft: TailoredResumeDraft, path: str) -> tuple[str, Any]:
     return field, items[idx]
 
 
+def _extract_previous_value(draft: TailoredResumeDraft, path: str) -> Any:
+    if path == "summary":
+        return draft.summary
+    m_b = _BULLET_PATH_RE.match(path)
+    if m_b:
+        field, item_idx, bullet_idx = m_b.group(1), int(m_b.group(2)), int(m_b.group(3))
+        return getattr(draft, field)[item_idx].bullets[bullet_idx].text
+    m = re.match(r"^(experiences|projects|education|skills)\[(\d+)\]$", path)
+    if not m:
+        return None
+    field, idx = m.group(1), int(m.group(2))
+    item = getattr(draft, field)[idx]
+    return item.model_dump() if hasattr(item, "model_dump") else item
+
+
 def _apply_patch_value(draft: TailoredResumeDraft, path: str, updated: Any) -> None:
     if path == "summary":
         if isinstance(updated, dict):
@@ -195,10 +210,12 @@ class OllamaResumeChatAgent:
                 yield _sse("token", {"content": char})
 
             if updated is not None:
+                previous = _extract_previous_value(request.draft, request.scope.path)
                 _apply_patch_value(request.draft, request.scope.path, updated)
                 patch = ResumePatch(
                     path=request.scope.path,
                     updated_value=updated,
+                    previous_value=previous,
                     diff_summary=diff_summary,
                 )
                 yield _sse("patch", patch.model_dump())
@@ -258,10 +275,12 @@ class OllamaResumeChatAgent:
 
         patch: Optional[ResumePatch] = None
         if updated is not None:
+            previous = _extract_previous_value(request.draft, request.scope.path)
             _apply_patch_value(request.draft, request.scope.path, updated)
             patch = ResumePatch(
                 path=request.scope.path,
                 updated_value=updated,
+                previous_value=previous,
                 diff_summary=diff_summary,
             )
 

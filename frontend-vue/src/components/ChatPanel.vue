@@ -19,11 +19,15 @@
         <div v-if="msg.scope" class="scope-tag">@ {{ msg.scope.label }}</div>
         <div class="chat-bubble">{{ msg.content }}</div>
         <div v-if="msg.patch" class="patch-card">
-          <div class="patch-card-label">Suggested change</div>
+          <div class="patch-card-label">Applied</div>
           <div class="patch-card-summary">{{ msg.patch.diff_summary }}</div>
           <div class="patch-card-actions">
-            <button class="btn-apply" @click="applyPatch(msg.patch!)">Apply</button>
-            <button class="btn-dismiss" @click="msg.patch = undefined">Dismiss</button>
+            <button
+              v-if="msg.patch.previous_value !== undefined"
+              class="btn-undo"
+              :disabled="undoing"
+              @click="undo"
+            >Undo</button>
           </div>
         </div>
       </div>
@@ -61,8 +65,8 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { streamChatMessage, getChatHistory } from '../api/client'
-import type { ChatMessage, ChatScope, ResumePatch, TailoredResumeDraft } from '../api/client'
+import { streamChatMessage, getChatHistory, undoLastPatch } from '../api/client'
+import type { ChatMessage, ChatScope, TailoredResumeDraft } from '../api/client'
 
 const props = defineProps<{
   sessionId: string
@@ -71,7 +75,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'patch', patch: ResumePatch): void
+  (e: 'undo', draft: TailoredResumeDraft): void
 }>()
 
 const auth = useAuthStore()
@@ -79,6 +83,7 @@ const isOpen = ref(false)
 const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const loading = ref(false)
+const undoing = ref(false)
 const messagesEl = ref<HTMLElement | null>(null)
 const pendingScope = ref<ChatScope | null>(null)
 
@@ -152,6 +157,7 @@ async function submit() {
         assistantMsg.patch = {
           path: event.path,
           updated_value: event.updated_value,
+          previous_value: event.previous_value,
           diff_summary: event.diff_summary,
         }
       }
@@ -166,8 +172,17 @@ async function submit() {
   }
 }
 
-function applyPatch(patch: ResumePatch) {
-  emit('patch', patch)
+async function undo() {
+  if (!auth.token || undoing.value) return
+  undoing.value = true
+  try {
+    const restoredDraft = await undoLastPatch(props.sessionId, auth.token)
+    emit('undo', restoredDraft)
+  } catch (err) {
+    console.error('Undo failed', err)
+  } finally {
+    undoing.value = false
+  }
 }
 
 async function scrollBottom() {
@@ -341,8 +356,8 @@ defineExpose({
 /* Patch card */
 .patch-card {
   margin-top: 6px;
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
@@ -350,7 +365,7 @@ defineExpose({
 
 .patch-card-label {
   font-weight: 600;
-  color: #52c41a;
+  color: #1890ff;
   margin-bottom: 4px;
   text-transform: uppercase;
   font-size: 11px;
@@ -368,24 +383,23 @@ defineExpose({
   gap: 8px;
 }
 
-.btn-apply {
-  padding: 3px 12px;
-  background: #52c41a;
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.btn-dismiss {
+.btn-undo {
   padding: 3px 12px;
   background: none;
-  border: 1px solid #d9d9d9;
+  border: 1px solid #91d5ff;
   border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
-  color: #666;
+  color: #1890ff;
+}
+
+.btn-undo:hover {
+  background: #bae7ff;
+}
+
+.btn-undo:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Scope bar */

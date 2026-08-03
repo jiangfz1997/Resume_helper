@@ -439,6 +439,7 @@ class ChatScope(BaseModel):
 class ResumePatch(BaseModel):
     path: str
     updated_value: Any   # str for summary, TailoredExperience / TailoredProject otherwise
+    previous_value: Optional[Any] = None
     diff_summary: str
 
 
