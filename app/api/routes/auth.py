@@ -35,7 +35,6 @@ async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenResponse:
-    print("login | email=%s", form_data.username)
     logger.debug("login | email=%s", form_data.username)
     result = await auth_service.login(form_data.username, form_data.password)
     if result is None:

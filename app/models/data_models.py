@@ -227,6 +227,15 @@ class TechCoverageItem(BaseModel):
 
 
 class MatchingReport(BaseModel):
+    """Skill match for one session.
+
+    Every ``*_indices`` field here and on the request models below indexes
+    ``ResumeSessionORM.profile_snapshot_json``, never the live profile. The
+    snapshot is frozen when the session is created, which is what keeps the
+    positions valid after the user edits or reorders their profile. Resolve them
+    against the snapshot only.
+    """
+
     matched_skills: list[str] = Field(default_factory=list)
     missing_skills: list[str] = Field(default_factory=list)
     highlighted_experience_indices: list[int] = Field(default_factory=list)
