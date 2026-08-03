@@ -23,6 +23,7 @@ An LLM-powered resume tailoring system built with FastAPI, LangGraph, and Vue 3.
 | Frontend | Vue 3, Vite, Naive UI, TypeScript |
 | Auth | JWT (python-jose), bcrypt (pwdlib) |
 | PDF Export | Playwright (headless Chromium) |
+| Packaging | Docker Compose; nginx serves the built frontend and proxies the API |
 
 ## Project Structure
 
@@ -48,9 +49,12 @@ app/
   services/         # Non-agent helpers (KeywordScorer, tier1_checker, ProfileManager,
                     # ResumeRenderer, PdfExporter)
 frontend-vue/       # Vue 3 frontend
+  Dockerfile        # vite build, served by nginx
+  nginx.conf        # SPA fallback plus /api proxy to the API container
 agents.yaml         # Model configuration per agent
 init.sql            # Database schema (no migration tool; see below)
-docker-compose.yml  # PostgreSQL service for local development
+Dockerfile          # API image: Python 3.12 plus Playwright Chromium
+docker-compose.yml  # postgres, and api + web behind the "app" profile
 ```
 
 ## Prerequisites
@@ -141,6 +145,7 @@ agents:
 
 | Method | Path | Description |
 |---|---|---|
+| GET | `/health` | Liveness probe; does not touch the database |
 | POST | `/auth/register` | Register new user |
 | POST | `/auth/login` | Get JWT token |
 | GET/PUT | `/users/me` | Get or update the current account |
@@ -177,9 +182,9 @@ superseded by `/resume/preview-html` and `/resume/export-pdf`.
 The system implements four distinct multi-agent workflows.
 
 **Workflow 1 — Profile Import:** LangGraph `ProfileParsePipeline` runs `parse` → `enrich` →
-`summarize`: `TwoPhaseProfileParser` (Flash Lite; one header-detection call plus four
-parallel section calls), then `CodeProfileEnricher` (rule-based, no LLM), then
-`ExperienceSummarizer` (Flash).
+`summarize`: `TwoPhaseProfileParser` (one header-detection call on Flash, because every
+downstream split depends on it, then four parallel section calls on Flash Lite), then
+`CodeProfileEnricher` (rule-based, no LLM), then `ExperienceSummarizer` (Flash).
 
 **Workflow 2 — Resume Generation:** LangGraph `ResumePipeline` runs `load_profile` →
 `analyze_jd` → `select_top_n` → `match_skills`, using `OllamaJDAnalyzer`, `TopNSelector`
