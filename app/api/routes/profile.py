@@ -23,25 +23,60 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
-def _extract_pdf_text(content: bytes) -> str:
-    """Extract text from PDF using pymupdf block-level extraction.
+_BULLET_PREFIXES = ("•", "‣", "▪", "◦", "●", "○", "·")
 
-    Each text block (paragraph / bullet) in the PDF is emitted as a single
-    line, so visually-wrapped long bullets are not split across lines.
-    Blocks are sorted by vertical then horizontal position to preserve
-    reading order across single- and two-column layouts.
+# A line whose right edge reaches this close to the page text margin was broken by
+# the renderer, not by the author, so the following line continues it.
+_WRAP_TOLERANCE_PT = 8.0
+
+
+def _join_wrapped_lines(lines: list[tuple[str, float]], right_margin: float) -> list[str]:
+    """Rebuild author-intended lines from renderer-wrapped ones.
+
+    ``lines`` holds (text, right_edge) pairs in reading order. Wrapping is detected
+    from geometry rather than wording: a continuation is any line that follows one
+    reaching the text margin. Capitalised continuations ("... via GitHub" /
+    "Actions with OIDC") are therefore joined correctly, which a
+    capitalisation-based rule cannot do. An explicit bullet always starts a new line.
+    """
+    out: list[str] = []
+    continues = False
+    for text, right_edge in lines:
+        cleaned = " ".join(text.split())
+        if not cleaned:
+            continue
+        if continues and out and not cleaned.startswith(_BULLET_PREFIXES):
+            out[-1] = f"{out[-1]} {cleaned}"
+        else:
+            out.append(cleaned)
+        continues = right_edge >= right_margin - _WRAP_TOLERANCE_PT
+    return out
+
+
+def _extract_pdf_text(content: bytes) -> str:
+    """Extract text from a PDF, one author-intended line per output line.
+
+    Blocks are sorted by vertical then horizontal position to preserve reading
+    order. Within a block, lines the renderer wrapped are rejoined via
+    :func:`_join_wrapped_lines`. The text margin is taken as the widest line on the
+    page, which assumes the single-column layout that the block sort already
+    assumes.
     """
     doc = fitz.open(stream=content, filetype="pdf")
     result_lines: list[str] = []
     for page in doc:
-        blocks = page.get_text("blocks")
-        blocks.sort(key=lambda b: (round(b[1] / 5) * 5, b[0]))
+        blocks = [b for b in page.get_text("dict")["blocks"] if b.get("type") == 0]
+        blocks.sort(key=lambda b: (round(b["bbox"][1] / 5) * 5, b["bbox"][0]))
+        right_margin = max(
+            (line["bbox"][2] for block in blocks for line in block["lines"]),
+            default=0.0,
+        )
         for block in blocks:
-            text: str = block[4]
-            for line in text.splitlines():
-                cleaned = " ".join(line.split())
-                if cleaned:
-                    result_lines.append(cleaned)
+            spans = [
+                ("".join(span["text"] for span in line["spans"]), line["bbox"][2])
+                for line in block["lines"]
+            ]
+            result_lines.extend(_join_wrapped_lines(spans, right_margin))
     return "\n".join(result_lines)
 
 

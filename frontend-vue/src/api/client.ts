@@ -109,12 +109,18 @@ export interface ProfileUpdate {
   projects?: Project[]
 }
 
+export interface UnclassifiedSection {
+  title: string
+  content: string[]
+}
+
 export interface ParsedProfileDraft {
   work_experiences: WorkExperience[]
   educations: Education[]
   projects: Project[]
   skills: Skill[]
   summary?: string
+  unclassified_sections?: UnclassifiedSection[]
 }
 
 export interface PipelineConfig {
@@ -267,14 +273,6 @@ export function confirmParsedDraft(token: string, draft: ParsedProfileDraft): Pr
 
 export function injectMockProfile(token: string, raw: string): Promise<MasterProfile> {
   return request('/profile/inject-mock', { method: 'POST', body: raw }, token)
-}
-
-export function generateBaseResume(token: string): Promise<TailoredResumeDraft> {
-  return request('/profile/base-resume/generate', { method: 'POST' }, token)
-}
-
-export function saveBaseResume(token: string, draft: TailoredResumeDraft): Promise<TailoredResumeDraft> {
-  return request('/profile/base-resume', { method: 'PUT', body: JSON.stringify(draft) }, token)
 }
 
 // ── resume pipeline ────────────────────────────────────────────
@@ -630,6 +628,7 @@ export interface ChatScope {
 export interface ResumePatch {
   path: string
   updated_value: unknown
+  previous_value?: unknown
   diff_summary: string
 }
 
@@ -668,10 +667,14 @@ export function getChatHistory(sessionId: string, token: string): Promise<ChatMe
   return request(`/resume/chat/${sessionId}`, {}, token)
 }
 
+export function undoLastPatch(sessionId: string, token: string): Promise<TailoredResumeDraft> {
+  return request(`/resume/chat/${sessionId}/undo`, { method: 'POST' }, token)
+}
+
 export type StreamEvent =
   | { type: 'intent'; value: string }
   | { type: 'token'; content: string }
-  | { type: 'patch'; path: string; updated_value: unknown; diff_summary: string }
+  | { type: 'patch'; path: string; updated_value: unknown; previous_value?: unknown; diff_summary: string }
   | { type: 'done'; reply: string }
 
 export interface ProfileChatRequest {

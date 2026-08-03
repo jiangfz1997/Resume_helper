@@ -2,17 +2,24 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from app.core.concurrency import get_llm_semaphore
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.model_factory import get_model_factory
 from app.interfaces.base import IProfileParser
-from app.models.data_models import Education, ParsedProfileDraft, Project, Skill, WorkExperience
+from app.models.data_models import (
+    Education,
+    ParsedProfileDraft,
+    Project,
+    Skill,
+    UnclassifiedSection,
+    WorkExperience,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +34,41 @@ def _load(name: str) -> str:
 # Structured output schemas — wrapper models required by with_structured_output
 # ---------------------------------------------------------------------------
 
+SectionKind = Literal["summary", "experience", "education", "projects", "skills", "other"]
+
+# Applied only to headers the model labelled "other", never to override a positive
+# classification. Prevents a real section from being dropped on a labelling miss.
+_KIND_HINTS: dict[SectionKind, tuple[str, ...]] = {
+    "projects": ("project", "portfolio"),
+    "experience": ("experience", "employment", "work history", "professional"),
+    "education": ("education", "academic"),
+    "skills": ("skill", "technical", "competenc", "technolog"),
+    "summary": ("summary", "objective", "about me"),
+}
+
+
+def _rescue_kind(title: str) -> Optional[SectionKind]:
+    lowered = title.lower()
+    for kind, hints in _KIND_HINTS.items():
+        if any(hint in lowered for hint in hints):
+            return kind
+    return None
+
+
+class _Header(BaseModel):
+    index: int
+    text: str
+    kind: SectionKind
+
+
 class _SectionHeaders(BaseModel):
-    summary: Optional[int] = None
-    experience: Optional[int] = None
-    education: Optional[int] = None
-    projects: Optional[int] = None
-    skills: Optional[int] = None
+    headers: list[_Header] = Field(default_factory=list)
+
+
+class _Section(BaseModel):
+    kind: SectionKind
+    title: str
+    body: str
 
 
 class _WorkExperienceList(BaseModel):
@@ -99,10 +135,17 @@ class TwoPhaseProfileParser(IProfileParser):
         headers: _SectionHeaders = await self._detector.ainvoke({"text": numbered})
         logger.debug("TwoPhaseProfileParser | headers=%s", headers.model_dump())
 
-        sections = self._split_sections(lines, headers)
+        split = self._split_sections(lines, headers)
+        sections = self._merge_by_kind(split)
+        unclassified = [
+            UnclassifiedSection(title=s.title, content=s.body.splitlines())
+            for s in split
+            if s.kind == "other" and s.body.strip()
+        ]
         logger.debug(
-            "TwoPhaseProfileParser | phase2 | sections=%s",
+            "TwoPhaseProfileParser | phase2 | sections=%s unclassified=%s",
             {k: len(v.splitlines()) for k, v in sections.items()},
+            [s.title for s in unclassified],
         )
 
         sem = get_llm_semaphore()
@@ -125,22 +168,58 @@ class TwoPhaseProfileParser(IProfileParser):
             educations=(edu_result.items if edu_result else []),
             projects=(proj_result.items if proj_result else []),
             skills=(skills_result.items if skills_result else []),
+            unclassified_sections=unclassified,
         )
 
     # ------------------------------------------------------------------
 
-    def _split_sections(self, lines: list[str], headers: _SectionHeaders) -> dict[str, str]:
-        header_dict = {k: v for k, v in headers.model_dump().items() if isinstance(v, int)}
-        boundaries = sorted(header_dict.items(), key=lambda x: x[1])
-        result: dict[str, str] = {}
-        for i, (name, start) in enumerate(boundaries):
-            content_start = start + 1
-            content_end = boundaries[i + 1][1] if i + 1 < len(boundaries) else len(lines)
+    @staticmethod
+    def _split_sections(lines: list[str], headers: _SectionHeaders) -> list[_Section]:
+        """Cut the resume at every detected header, including unclassified ones.
+
+        An "other" header still terminates the preceding section. That is what keeps
+        an unrecognised block (say "RELATED PROJECTS") out of the section above it,
+        regardless of whether the model classified it correctly.
+        """
+        ordered = sorted(
+            (h for h in headers.headers if 0 <= h.index < len(lines)),
+            key=lambda h: h.index,
+        )
+        sections: list[_Section] = []
+        for i, header in enumerate(ordered):
+            content_start = header.index + 1
+            content_end = ordered[i + 1].index if i + 1 < len(ordered) else len(lines)
             raw = "\n".join(
                 line for line in lines[content_start:content_end] if line.strip()
             )
-            result[name] = self._rejoin_wrapped_lines(raw)
-        return result
+            kind = header.kind
+            if kind == "other":
+                rescued = _rescue_kind(header.text)
+                if rescued is not None:
+                    logger.info(
+                        "TwoPhaseProfileParser | rescued header %r from 'other' to %r",
+                        header.text, rescued,
+                    )
+                    kind = rescued
+            sections.append(
+                _Section(
+                    kind=kind,
+                    title=header.text,
+                    body=TwoPhaseProfileParser._rejoin_wrapped_lines(raw),
+                )
+            )
+        return sections
+
+    @staticmethod
+    def _merge_by_kind(sections: list[_Section]) -> dict[str, str]:
+        """Concatenate bodies of sections sharing a kind, preserving document order."""
+        merged: dict[str, str] = {}
+        for section in sections:
+            if section.kind == "other":
+                continue
+            existing = merged.get(section.kind)
+            merged[section.kind] = f"{existing}\n{section.body}" if existing else section.body
+        return merged
 
     @staticmethod
     def _rejoin_wrapped_lines(text: str) -> str:

@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
 
 from app.models.data_models import TokenResponse, UserRead
 from tests.conftest import TEST_USER_ID
@@ -32,7 +33,9 @@ class TestRegister:
     async def test_duplicate_email_returns_409(
         self, auth_client: AsyncClient, mock_auth_service: MagicMock
     ) -> None:
-        mock_auth_service.register.side_effect = Exception("duplicate key")
+        mock_auth_service.register.side_effect = IntegrityError(
+            "INSERT INTO users ...", {}, Exception("duplicate key value violates unique constraint")
+        )
         response = await auth_client.post(
             "/auth/register",
             json={"email": "existing@example.com", "password": "secret123", "full_name": "User"},

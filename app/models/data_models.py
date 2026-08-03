@@ -167,12 +167,29 @@ class MasterProfile(BaseModel):
     skills: list[Skill] = Field(default_factory=list)
 
 
+class HealthResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+
+
+class UnclassifiedSection(BaseModel):
+    """A resume section that matched none of the four supported categories.
+
+    Surfaced to the user on the import confirmation screen so that content is never
+    dropped silently. Not persisted: it carries no meaning once the user has decided
+    what to do with it.
+    """
+
+    title: str
+    content: list[str] = Field(default_factory=list)
+
+
 class ParsedProfileDraft(BaseModel):
     work_experiences: list[WorkExperience] = Field(default_factory=list)
     educations: list[Education] = Field(default_factory=list)
     projects: list[Project] = Field(default_factory=list)
     skills: list[Skill] = Field(default_factory=list)
     summary: Optional[str] = None
+    unclassified_sections: list[UnclassifiedSection] = Field(default_factory=list)
 
 
 class JobDescription(BaseModel):
@@ -214,6 +231,15 @@ class TechCoverageItem(BaseModel):
 
 
 class MatchingReport(BaseModel):
+    """Skill match for one session.
+
+    Every ``*_indices`` field here and on the request models below indexes
+    ``ResumeSessionORM.profile_snapshot_json``, never the live profile. The
+    snapshot is frozen when the session is created, which is what keeps the
+    positions valid after the user edits or reorders their profile. Resolve them
+    against the snapshot only.
+    """
+
     matched_skills: list[str] = Field(default_factory=list)
     missing_skills: list[str] = Field(default_factory=list)
     highlighted_experience_indices: list[int] = Field(default_factory=list)
@@ -225,24 +251,6 @@ class MatchingReport(BaseModel):
     tech_coverage: list[TechCoverageItem] = Field(default_factory=list)
 
 
-class AuditFeedback(BaseModel):
-    score: float = Field(ge=0.0, le=1.0)
-    suggestions: list[str] = Field(default_factory=list)
-    approved: bool
-    keyword_match_score: float = 0.0          # weighted composite
-    required_keyword_coverage: float = 0.0    # tech_keywords hit rate
-
-
-class DraftResume(BaseModel):
-    latex_content: str
-    iteration: int = 0
-
-
-class PipelineStatus(str, Enum):
-    in_progress = "in_progress"
-    approved = "approved"
-    max_retries_reached = "max_retries_reached"
-
 
 class PipelineConfig(BaseModel):
     initial_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
@@ -250,12 +258,6 @@ class PipelineConfig(BaseModel):
     min_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     max_retries: int = Field(default=1, ge=1)
 
-
-class PipelineState(BaseModel):
-    retry_count: int = 0
-    best_score: float = 0.0
-    best_draft: Optional[DraftResume] = None
-    status: PipelineStatus = PipelineStatus.in_progress
 
 
 class CompileRequest(BaseModel):
@@ -328,18 +330,6 @@ class TailorFullRequest(BaseModel):
     template_source: Optional[Literal["global", "user"]] = None
     selected_experience_indices: Optional[list[int]] = None
     selected_project_indices: Optional[list[int]] = None
-
-
-class ResumeRequest(BaseModel):
-    jd_text: str
-    config: PipelineConfig = Field(default_factory=PipelineConfig)
-
-
-class ResumeResponse(BaseModel):
-    latex_content: str
-    score: float
-    retries: int
-    status: PipelineStatus
 
 
 # ── v2 models ──────────────────────────────────────────
@@ -475,6 +465,7 @@ class ChatScope(BaseModel):
 class ResumePatch(BaseModel):
     path: str
     updated_value: Any   # str for summary, TailoredExperience / TailoredProject otherwise
+    previous_value: Optional[Any] = None
     diff_summary: str
 
 
@@ -508,11 +499,6 @@ class ProfileChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = Field(default_factory=list)
 
-
-class IntentResult(BaseModel):
-    intent: Literal["local_patch", "keyword_inject", "full_diagnose", "question"]
-    keyword: Optional[str] = None
-    target_path: Optional[str] = None
 
 
 # ── copilot / diagnostic models ────────────────────────────────

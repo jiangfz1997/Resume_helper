@@ -814,7 +814,7 @@
             :session-id="currentSessionId"
             :draft="draft"
             :pending-scope-init="pendingScope ?? undefined"
-            @patch="handlePatch"
+            @undo="handleUndo"
           />
         </div>
 
@@ -850,7 +850,6 @@ import { useMessage } from 'naive-ui'
 import { analyzeJD, batchVerify, confirmGenerate, defaultLayoutSettings, diagnose, getProfile, getSession, microValidate, tailorOneItem, tailorFull, updateSessionDraft } from '../api/client'
 import type {
   BatchVerifyResponse,
-  CategoryMatchResult,
   ChatScope,
   DiagnosticReport,
   DiagnosticTask,
@@ -860,7 +859,6 @@ import type {
   MasterProfile,
   MatchingPreview,
   PipelineConfig,
-  ResumePatch,
   SkillGapSuggestion,
   TailoredResumeDraft,
   WorkExperience,
@@ -889,7 +887,9 @@ type Stage = 'jd' | 'result'
 const stage = ref<Stage>('jd')
 
 // ── stage 1 ────────────────────────────────────────────────────
-const jdText = ref(`We are looking for a Senior Backend Engineer to join our platform team.
+const jdText = ref(`
+**** SAMPLE INPUT ***********
+We are looking for a Senior Backend Engineer to join our platform team.
 
 Requirements:
 - 4+ years of experience in Python backend development
@@ -1002,12 +1002,6 @@ async function runGenerate(): Promise<void> {
       selectedProjIndices.value,
     )
     draft.value = {
-      show_summary: true,
-      show_experiences: true,
-      show_education: true,
-      show_projects: true,
-      show_skills: true,
-      custom_sections: [],
       ...draftData,
       contact_info: draftData.contact_info ?? {},
     }
@@ -1051,7 +1045,7 @@ async function runTailorFull(): Promise<void> {
       selectedExpIndices.value,
       selectedProjIndices.value,
     )
-    draft.value = { show_summary: true, show_experiences: true, show_education: true, show_projects: true, show_skills: true, custom_sections: [], ...updated, summary: updated.summary ?? '', contact_info: updated.contact_info ?? {} }
+    draft.value = { ...updated, summary: updated.summary ?? '', contact_info: updated.contact_info ?? {} }
     message.success('Full optimization complete')
     runDiagnose()
   } catch (e) {
@@ -1086,12 +1080,6 @@ async function loadSessionById(sid: string): Promise<void> {
     currentSessionId.value = sid
     if (detail.status === 'draft_ready' && detail.tailored_draft) {
       draft.value = {
-        show_summary: true,
-        show_experiences: true,
-        show_education: true,
-        show_projects: true,
-        show_skills: true,
-        custom_sections: [],
         ...detail.tailored_draft,
         summary: detail.tailored_draft.summary ?? '',
         contact_info: detail.tailored_draft.contact_info ?? {},
@@ -1289,31 +1277,6 @@ async function verifyTask(task: DiagnosticTask): Promise<void> {
   }
 }
 
-function applyReplacement(task: DiagnosticTask): void {
-  if (!draft.value || !task.replaceable || !task.original_text || !task.suggested_text) return
-  for (const exp of draft.value.experiences) {
-    for (const bullet of exp.bullets) {
-      if (bullet.text === task.original_text) {
-        bullet.text = task.suggested_text
-        verifiedTaskIds.add(task.id)
-        message.success('Replacement applied')
-        return
-      }
-    }
-  }
-  for (const proj of draft.value.projects) {
-    for (const bullet of proj.bullets) {
-      if (bullet.text === task.original_text) {
-        bullet.text = task.suggested_text
-        verifiedTaskIds.add(task.id)
-        message.success('Replacement applied')
-        return
-      }
-    }
-  }
-  message.warning('Original text not found in current draft')
-}
-
 function goToSection(section: string | null | undefined): void {
   if (!section) return
   leftActiveTab.value = 'content'
@@ -1476,29 +1439,9 @@ function discussInChat(task: DiagnosticTask): void {
   chatPanelRef.value?.prefill(prefillParts.join(''))
 }
 
-function handlePatch(patch: ResumePatch): void {
+function handleUndo(restoredDraft: TailoredResumeDraft): void {
   if (!draft.value) return
-  if (patch.path === 'summary') {
-    draft.value.summary = patch.updated_value as string
-    return
-  }
-  const mb = patch.path.match(/^(experiences|projects)\[(\d+)\]\.bullets\[(\d+)\]$/)
-  if (mb) {
-    const field = mb[1] as 'experiences' | 'projects'
-    const itemIdx = parseInt(mb[2])
-    const bulletIdx = parseInt(mb[3])
-    const item = (draft.value[field] as Array<{ bullets: Array<{ text: string }> }>)[itemIdx]
-    if (item?.bullets[bulletIdx] != null) {
-      item.bullets[bulletIdx].text = patch.updated_value as string
-    }
-    return
-  }
-  const m = patch.path.match(/^(experiences|projects)\[(\d+)\]$/)
-  if (m) {
-    const field = m[1] as 'experiences' | 'projects'
-    const idx = parseInt(m[2])
-    ;(draft.value[field] as unknown[])[idx] = patch.updated_value
-  }
+  draft.value = restoredDraft
 }
 
 async function saveDraft(): Promise<void> {

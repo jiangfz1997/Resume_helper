@@ -34,7 +34,7 @@ openai:
     resume_tailor:         OPENAI_SMART_MODEL
     resume_chat_json:      OPENAI_FAST_MODEL
     resume_chat_stream:    OPENAI_FAST_MODEL
-    section_detector:      OPENAI_FAST_MODEL
+    section_detector:      OPENAI_SMART_MODEL
     section_parser:        OPENAI_FAST_MODEL
     diagnostic_analyzer:   OPENAI_SMART_MODEL
     batch_verifier:        OPENAI_FAST_MODEL
@@ -75,10 +75,12 @@ agents:
 
 
   # Two-phase resume PDF parser
+  # Header detection drives every downstream split, and a miss silently merges one
+  # section into another, so this runs on the stronger model despite the tiny payload.
   section_detector:
-    model: GOOGLE_FLASH_LITE_MODEL
+    model: GOOGLE_FLASH_MODEL
     temperature: 0.0
-    thinking_level: minimal
+    thinking_level: low
 
   section_parser:
     model: GOOGLE_FLASH_LITE_MODEL

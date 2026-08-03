@@ -16,6 +16,7 @@ from app.api.routes import chat
 from app.api.routes.chat import stream_router as chat_stream_router
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.models.data_models import HealthResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,7 +28,7 @@ app = FastAPI(title="Resume Tailoring Assistant", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,10 +39,15 @@ app.add_middleware(
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     tb = traceback.format_exc()
     logger.error("Unhandled exception | %s %s\n%s", request.method, request.url.path, tb)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc), "traceback": tb},
-    )
+    if settings.debug:
+        return JSONResponse(status_code=500, content={"detail": str(exc), "traceback": tb})
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+@app.get("/health", tags=["health"], response_model=HealthResponse)
+async def health() -> HealthResponse:
+    """Liveness probe. Deliberately does not touch the database."""
+    return HealthResponse()
 
 
 app.include_router(auth.router)
@@ -57,4 +63,4 @@ app.include_router(chat.router)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8001, log_level="debug")
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="debug")

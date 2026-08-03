@@ -115,6 +115,7 @@ class ResumeSessionORM(Base):
     match_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     job_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Positions within profile_snapshot_json above, not within the live profile.
     selected_experience_indices: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     selected_project_indices: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     template_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

@@ -23,8 +23,6 @@ from app.models.data_models import (
     PdfExportRequest,
     RenderRequest,
     ResumeAnalyzeRequest,
-    ResumeRequest,
-    ResumeResponse,
     TailoredResumeDraft,
     TailorFullRequest,
     TailorOneRequest,
@@ -392,28 +390,3 @@ async def tailor_full(
         await session_repo.mark_failed(uuid.UUID(request.session_id), str(exc))
         raise
 
-
-# # DEPRECATED: single-step generate was replaced by /analyze + /confirm two-phase flow.
-
-# @router.post("/generate", response_model=ResumeResponse, deprecated=True)
-# async def generate_resume(
-#     request: ResumeRequest,
-#     user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
-#     pipeline: Annotated[ResumePipeline, Depends(get_pipeline)],
-# ) -> ResumeResponse:
-#     logger.info(
-#         "generate_resume | user_id=%s | jd_len=%d | max_retries=%d threshold=%.2f",
-#         user_id, len(request.jd_text), request.config.max_retries, request.config.initial_threshold,
-#     )
-#     try:
-
-#         result = await pipeline.run(user_id, request)
-#         logger.info(
-#             "generate_resume | done | user_id=%s | status=%s score=%.2f retries=%d",
-#             user_id, result.status, result.score, result.retries,
-#         )
-
-#         return result
-#     except ValueError as exc:
-#         logger.warning("generate_resume | error | user_id=%s | %s", user_id, exc)
-#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

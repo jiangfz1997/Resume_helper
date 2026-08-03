@@ -37,15 +37,8 @@
           >
             {{ s.status === 'draft_ready' ? 'View Draft' : 'Continue' }}
           </n-button>
-          <!-- DEPRECATED: PDF download from session list disabled (format broken) -->
-          <!-- <n-button
-            v-if="s.status === 'draft_ready'"
-            size="small"
-            @click="renderPdf(s)"
-            :loading="renderingId === s.id"
-          >
-            PDF
-          </n-button> -->
+          <!-- PDF download from the session list was removed with the LaTeX
+               render path; export from the draft view instead. -->
           <n-button size="small" quaternary type="error" @click="confirmDelete(s)">Delete</n-button>
         </n-space>
       </div>
@@ -63,9 +56,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   deleteSession,
-  getSession,
   listSessions,
-  renderDraft,
   type ResumeSessionSummary,
   type ResumeSessionStatus,
 } from '../api/client'
@@ -82,7 +73,6 @@ const error = ref('')
 const offset = ref(0)
 const hasMore = ref(false)
 const LIMIT = 20
-const renderingId = ref<string | null>(null)
 
 function statusType(s: ResumeSessionStatus): 'success' | 'warning' | 'error' | 'info' | 'default' {
   if (s === 'draft_ready') return 'success'
@@ -124,31 +114,6 @@ onMounted(() => fetchSessions())
 
 async function resumeSession(s: ResumeSessionSummary): Promise<void> {
   router.push({ path: '/generate', query: { session_id: s.id } })
-}
-
-async function renderPdf(s: ResumeSessionSummary): Promise<void> {
-  renderingId.value = s.id
-  try {
-    const detail = await getSession(token(), s.id)
-    if (!detail.tailored_draft) { message.warning('No draft available'); return }
-    const blob = await renderDraft(
-      token(),
-      detail.tailored_draft,
-      true,
-      detail.tailored_draft.template_id ?? null,
-      detail.tailored_draft.template_source ?? null,
-    )
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `resume_${s.job_title ?? s.id}.pdf`
-    a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) {
-    message.error((e as Error).message)
-  } finally {
-    renderingId.value = null
-  }
 }
 
 async function confirmDelete(s: ResumeSessionSummary): Promise<void> {
