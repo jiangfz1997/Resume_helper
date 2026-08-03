@@ -199,6 +199,30 @@ The `Ollama*` class-name prefix is historical — those agents were first writte
 local Ollama server. They now build their model through `ModelFactory` like every other
 agent, so the prefix says nothing about which provider is in use.
 
+## What leaves your machine
+
+Uploading a resume sends its text to whichever LLM provider is configured. The exposure
+is narrower than it looks, and worth knowing before you point this at a real resume:
+
+| Call | Sees |
+|---|---|
+| Section header detection | The **entire resume text**, including the contact block at the top |
+| The four section parsers | Only their own section body |
+| JD analysis, matching, tailoring | Employers, schools, project names, bullet text |
+
+The contact block is the only place direct identifiers appear, and only the header
+detector sees it — content above the first section header is discarded during splitting,
+which is also why `ParsedProfileDraft` carries no contact fields. Contact details are
+attached to a draft after the model returns, never sent to it.
+
+`LANGCHAIN_TRACING_V2=true` changes this picture completely: it uploads the prompt and
+response of every LangChain call to LangSmith, so all of the above is retained by a second
+third party. It is off in [`.env.example`](.env.example); keep it off unless you are
+debugging.
+
+To keep everything local, set `LLM_PROVIDER=ollama` and point `base_url` in
+[`agents.yaml`](agents.yaml) at your Ollama server. No resume text then leaves the machine.
+
 ## Deployment
 
 ### Running the whole stack in Docker
