@@ -275,14 +275,6 @@ export function injectMockProfile(token: string, raw: string): Promise<MasterPro
   return request('/profile/inject-mock', { method: 'POST', body: raw }, token)
 }
 
-export function generateBaseResume(token: string): Promise<TailoredResumeDraft> {
-  return request('/profile/base-resume/generate', { method: 'POST' }, token)
-}
-
-export function saveBaseResume(token: string, draft: TailoredResumeDraft): Promise<TailoredResumeDraft> {
-  return request('/profile/base-resume', { method: 'PUT', body: JSON.stringify(draft) }, token)
-}
-
 // ── resume pipeline ────────────────────────────────────────────
 
 export function analyzeJD(token: string, jd_text: string): Promise<MatchingPreview> {

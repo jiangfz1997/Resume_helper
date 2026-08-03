@@ -7,10 +7,8 @@ RUN npm ci
 
 COPY . .
 
-# vite build only, without the vue-tsc pass that "npm run build" runs first:
-# the existing sources do not typecheck cleanly yet. Restore "npm run build"
-# here once they do.
-RUN npx vite build
+# Runs vue-tsc before vite, so a type error fails the image build.
+RUN npm run build
 
 
 FROM nginx:alpine

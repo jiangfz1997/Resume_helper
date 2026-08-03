@@ -315,7 +315,7 @@
 
                 <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 6px">BULLET POINTS</n-text>
                 <n-space vertical size="small">
-                  <div v-for="(bullet, bi) in exp.description" :key="bi" style="display: flex; gap: 8px; align-items: flex-start">
+                  <div v-for="(_bullet, bi) in exp.description" :key="bi" style="display: flex; gap: 8px; align-items: flex-start">
                     <n-input
                       v-model:value="exp.description[bi]"
                       type="textarea"
@@ -446,7 +446,7 @@
 
                 <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 6px">BULLET POINTS</n-text>
                 <n-space vertical size="small">
-                  <div v-for="(bullet, bi) in proj.bullets" :key="bi" style="display: flex; gap: 8px; align-items: flex-start">
+                  <div v-for="(_bullet, bi) in proj.bullets" :key="bi" style="display: flex; gap: 8px; align-items: flex-start">
                     <n-input
                       v-model:value="proj.bullets[bi]"
                       type="textarea"
@@ -575,157 +575,6 @@
         </div>
       </n-tab-pane>
 
-      <!-- ── Base Resume ── -->
-      <n-tab-pane name="base" tab="Base Resume">
-        <n-card style="margin-top: 12px">
-          <template v-if="!baseResume">
-            <n-space vertical size="medium" style="align-items: flex-start">
-              <n-text depth="3" style="font-size: 13px; line-height: 1.6">
-                Generate a polished base resume from your profile. This will be used as the
-                starting point for every JD-specific tailoring — the AI will only make
-                targeted adjustments instead of generating from scratch.
-              </n-text>
-              <n-alert v-if="!profile?.work_experiences?.length" type="warning" style="width: 100%">
-                Your profile has no work experience yet. Upload a PDF or add experience in the
-                Edit tab first.
-              </n-alert>
-              <n-button
-                type="primary"
-                :loading="baseGenLoading"
-                :disabled="!profile?.work_experiences?.length"
-                @click="runGenerateBase"
-              >
-                Generate Base Resume
-              </n-button>
-              <n-alert v-if="baseGenError" type="error">{{ baseGenError }}</n-alert>
-            </n-space>
-          </template>
-
-          <template v-else>
-            <n-space justify="space-between" align="center" style="margin-bottom: 16px">
-              <n-text style="font-weight: 600">Base Resume</n-text>
-              <n-space size="small">
-                <n-button size="small" quaternary :loading="baseGenLoading" @click="runGenerateBase">
-                  Regenerate
-                </n-button>
-                <n-button size="small" type="primary" :loading="baseSaveLoading" @click="runSaveBase">
-                  Save Changes
-                </n-button>
-              </n-space>
-            </n-space>
-
-            <n-alert type="info" style="margin-bottom: 16px; font-size: 12px">
-              This is your editable base resume. Changes here persist to your profile and will be
-              used as the starting point for all future JD tailoring.
-            </n-alert>
-
-            <!-- Summary -->
-            <n-divider title-placement="left">Summary</n-divider>
-            <n-input
-              v-model:value="baseResume.summary"
-              type="textarea"
-              :rows="3"
-              :autosize="{ minRows: 2, maxRows: 6 }"
-            />
-
-            <!-- Experiences -->
-            <n-divider title-placement="left">
-              Work Experience
-              <n-tag size="tiny" style="margin-left: 8px">{{ baseResume.experiences.length }}</n-tag>
-            </n-divider>
-            <n-collapse>
-              <n-collapse-item
-                v-for="(exp, i) in baseResume.experiences"
-                :key="i"
-                :name="String(i)"
-              >
-                <template #header>
-                  <n-text style="font-size: 13px; font-weight: 500">
-                    {{ exp.title || '(new)' }}<span v-if="exp.company"> @ {{ exp.company }}</span>
-                  </n-text>
-                </template>
-                <n-space vertical size="small">
-                  <div
-                    v-for="(bullet, bi) in exp.bullets"
-                    :key="bi"
-                    style="display: flex; gap: 8px; align-items: flex-start"
-                  >
-                    <n-input
-                      v-model:value="exp.bullets[bi].text"
-                      type="textarea"
-                      :rows="2"
-                      :autosize="{ minRows: 1, maxRows: 4 }"
-                      size="small"
-                      style="flex: 1"
-                    />
-                    <n-button
-                      size="tiny"
-                      quaternary
-                      type="error"
-                      style="margin-top: 4px; flex-shrink: 0"
-                      @click="exp.bullets.splice(bi, 1)"
-                    >
-                      Del
-                    </n-button>
-                  </div>
-                  <n-button size="tiny" dashed @click="exp.bullets.push({ text: '', highlighted: false })">
-                    + Add bullet
-                  </n-button>
-                </n-space>
-              </n-collapse-item>
-            </n-collapse>
-
-            <!-- Projects -->
-            <n-divider title-placement="left">
-              Projects
-              <n-tag size="tiny" style="margin-left: 8px">{{ baseResume.projects.length }}</n-tag>
-            </n-divider>
-            <n-collapse>
-              <n-collapse-item
-                v-for="(proj, i) in baseResume.projects"
-                :key="i"
-                :name="`proj-${i}`"
-              >
-                <template #header>
-                  <n-text style="font-size: 13px; font-weight: 500">{{ proj.name }}</n-text>
-                </template>
-                <n-space vertical size="small">
-                  <div
-                    v-for="(bullet, bi) in proj.bullets"
-                    :key="bi"
-                    style="display: flex; gap: 8px; align-items: flex-start"
-                  >
-                    <n-input
-                      v-model:value="proj.bullets[bi].text"
-                      type="textarea"
-                      :rows="2"
-                      :autosize="{ minRows: 1, maxRows: 4 }"
-                      size="small"
-                      style="flex: 1"
-                    />
-                    <n-button
-                      size="tiny"
-                      quaternary
-                      type="error"
-                      style="margin-top: 4px; flex-shrink: 0"
-                      @click="proj.bullets.splice(bi, 1)"
-                    >
-                      Del
-                    </n-button>
-                  </div>
-                  <n-button size="tiny" dashed @click="proj.bullets.push({ text: '', highlighted: false })">
-                    + Add bullet
-                  </n-button>
-                </n-space>
-              </n-collapse-item>
-            </n-collapse>
-
-            <n-alert v-if="baseSaveError" type="error" style="margin-top: 12px">{{ baseSaveError }}</n-alert>
-            <n-alert v-if="baseSaveSuccess" type="success" style="margin-top: 12px">{{ baseSaveSuccess }}</n-alert>
-          </template>
-        </n-card>
-      </n-tab-pane>
-
       <!-- ── Dev Import ── -->
       <n-tab-pane name="dev" tab="Dev Import">
         <n-card style="margin-top: 12px">
@@ -790,19 +639,16 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 type IndexedSkill = Skill & { _idx: number }
 import {
   confirmParsedDraft,
-  generateBaseResume,
   getProfile,
   injectMockProfile,
   replaceSkills,
-  saveBaseResume,
   updateProfile as apiUpdateProfile,
   updateUserMe,
   uploadResumePDF,
 } from '../api/client'
-import type { ContactInfo, Education, MasterProfile, ParsedProfileDraft, ProficiencyLevel, Project, Skill, TailoredResumeDraft, WorkExperience } from '../api/client'
+import type { ContactInfo, Education, MasterProfile, ParsedProfileDraft, ProficiencyLevel, Project, Skill, WorkExperience } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import ProfileChatPanel from '../components/ProfileChatPanel.vue'
-import type { ProfileChatInit } from '../components/ProfileChatPanel.vue'
 
 const auth = useAuthStore()
 const token = () => auth.token!
@@ -837,9 +683,6 @@ async function fetchProfile(): Promise<void> {
   viewError.value = ''
   try {
     profile.value = await getProfile(token())
-    if (profile.value.base_resume && !baseResume.value) {
-      baseResume.value = JSON.parse(JSON.stringify(profile.value.base_resume))
-    }
   } catch (e) {
     viewError.value = (e as Error).message
   } finally {
@@ -1038,10 +881,6 @@ function confirmAddSkill(): void {
   newSkillInput.name = ''
 }
 
-function addEditSkill(): void {
-  editData.skills.unshift({ category: '', name: '', proficiency: 'intermediate' })
-}
-
 function addTech(i: number): void {
   const val = techInputs.value[i]?.trim()
   if (val) {
@@ -1103,48 +942,8 @@ const proficiencyOptions: SelectOption[] = [
   { label: 'Beginner', value: 'beginner' },
 ]
 
-// ── base resume ────────────────────────────────────────────────
-const baseResume = ref<TailoredResumeDraft | null>(null)
-const baseGenLoading = ref(false)
-const baseGenError = ref('')
-const baseSaveLoading = ref(false)
-const baseSaveError = ref('')
-const baseSaveSuccess = ref('')
-
 function onTabChange(tab: string): void {
   if (tab === 'edit') populateEdit()
-  if (tab === 'base' && profile.value?.base_resume) {
-    baseResume.value = JSON.parse(JSON.stringify(profile.value.base_resume))
-  }
-}
-
-async function runGenerateBase(): Promise<void> {
-  baseGenError.value = ''
-  baseGenLoading.value = true
-  try {
-    baseResume.value = await generateBaseResume(token())
-    await fetchProfile()
-  } catch (e) {
-    baseGenError.value = (e as Error).message
-  } finally {
-    baseGenLoading.value = false
-  }
-}
-
-async function runSaveBase(): Promise<void> {
-  if (!baseResume.value) return
-  baseSaveError.value = ''
-  baseSaveSuccess.value = ''
-  baseSaveLoading.value = true
-  try {
-    await saveBaseResume(token(), baseResume.value)
-    baseSaveSuccess.value = 'Base resume saved.'
-    await fetchProfile()
-  } catch (e) {
-    baseSaveError.value = (e as Error).message
-  } finally {
-    baseSaveLoading.value = false
-  }
 }
 
 // ── text selection quote ────────────────────────────────────────

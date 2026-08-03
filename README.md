@@ -239,9 +239,3 @@ run the backend outside Docker.
 - `GET /health` is a database-free liveness probe
 
 There is no CI pipeline yet.
-
-### Known gap
-
-`npm run build` runs `vue-tsc && vite build`, and the sources do not typecheck cleanly
-yet, so the frontend image runs `vite build` directly. Restore `npm run build` in
-[`frontend-vue/Dockerfile`](frontend-vue/Dockerfile) once the type errors are fixed.

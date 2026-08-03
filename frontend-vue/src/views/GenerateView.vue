@@ -887,7 +887,9 @@ type Stage = 'jd' | 'result'
 const stage = ref<Stage>('jd')
 
 // ── stage 1 ────────────────────────────────────────────────────
-const jdText = ref(`We are looking for a Senior Backend Engineer to join our platform team.
+const jdText = ref(`
+**** SAMPLE INPUT ***********
+We are looking for a Senior Backend Engineer to join our platform team.
 
 Requirements:
 - 4+ years of experience in Python backend development
@@ -1000,12 +1002,6 @@ async function runGenerate(): Promise<void> {
       selectedProjIndices.value,
     )
     draft.value = {
-      show_summary: true,
-      show_experiences: true,
-      show_education: true,
-      show_projects: true,
-      show_skills: true,
-      custom_sections: [],
       ...draftData,
       contact_info: draftData.contact_info ?? {},
     }
@@ -1049,7 +1045,7 @@ async function runTailorFull(): Promise<void> {
       selectedExpIndices.value,
       selectedProjIndices.value,
     )
-    draft.value = { show_summary: true, show_experiences: true, show_education: true, show_projects: true, show_skills: true, custom_sections: [], ...updated, summary: updated.summary ?? '', contact_info: updated.contact_info ?? {} }
+    draft.value = { ...updated, summary: updated.summary ?? '', contact_info: updated.contact_info ?? {} }
     message.success('Full optimization complete')
     runDiagnose()
   } catch (e) {
@@ -1084,12 +1080,6 @@ async function loadSessionById(sid: string): Promise<void> {
     currentSessionId.value = sid
     if (detail.status === 'draft_ready' && detail.tailored_draft) {
       draft.value = {
-        show_summary: true,
-        show_experiences: true,
-        show_education: true,
-        show_projects: true,
-        show_skills: true,
-        custom_sections: [],
         ...detail.tailored_draft,
         summary: detail.tailored_draft.summary ?? '',
         contact_info: detail.tailored_draft.contact_info ?? {},
@@ -1285,31 +1275,6 @@ async function verifyTask(task: DiagnosticTask): Promise<void> {
   } finally {
     verifyingTaskId.value = null
   }
-}
-
-function applyReplacement(task: DiagnosticTask): void {
-  if (!draft.value || !task.replaceable || !task.original_text || !task.suggested_text) return
-  for (const exp of draft.value.experiences) {
-    for (const bullet of exp.bullets) {
-      if (bullet.text === task.original_text) {
-        bullet.text = task.suggested_text
-        verifiedTaskIds.add(task.id)
-        message.success('Replacement applied')
-        return
-      }
-    }
-  }
-  for (const proj of draft.value.projects) {
-    for (const bullet of proj.bullets) {
-      if (bullet.text === task.original_text) {
-        bullet.text = task.suggested_text
-        verifiedTaskIds.add(task.id)
-        message.success('Replacement applied')
-        return
-      }
-    }
-  }
-  message.warning('Original text not found in current draft')
 }
 
 function goToSection(section: string | null | undefined): void {
