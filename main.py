@@ -16,6 +16,7 @@ from app.api.routes import chat
 from app.api.routes.chat import stream_router as chat_stream_router
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.models.data_models import HealthResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,6 +42,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     if settings.debug:
         return JSONResponse(status_code=500, content={"detail": str(exc), "traceback": tb})
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+@app.get("/health", tags=["health"], response_model=HealthResponse)
+async def health() -> HealthResponse:
+    """Liveness probe. Deliberately does not touch the database."""
+    return HealthResponse()
 
 
 app.include_router(auth.router)

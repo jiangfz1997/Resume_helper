@@ -88,8 +88,9 @@ cp .env.example .env
 # Edit .env: set POSTGRES_*, DATABASE_URL, JWT_SECRET_KEY, GOOGLE_API_KEY,
 # GOOGLE_FLASH_MODEL, GOOGLE_FLASH_LITE_MODEL
 
-# Start PostgreSQL. On first run the container executes init.sql automatically,
-# which creates every table.
+# Start PostgreSQL alone. On first run the container executes init.sql
+# automatically, which creates every table. The API and frontend images sit
+# behind the "app" profile, so they are not started here — see Deployment.
 docker compose up -d
 
 # Start backend
@@ -195,14 +196,47 @@ agent, so the prefix says nothing about which provider is in use.
 
 ## Deployment
 
-[`docker-compose.yml`](docker-compose.yml) provisions PostgreSQL only; there is no
-application image or CI pipeline yet.
+### Running the whole stack in Docker
 
-For manual deployment, the backend requires:
-- A PostgreSQL database accessible via `DATABASE_URL`, with [`init.sql`](init.sql) applied
+The `app` profile adds the API and the frontend to the database service. Without it,
+`docker compose up -d` starts PostgreSQL alone, which is what local development wants.
+
+```bash
+cp .env.example .env
+# Edit .env: POSTGRES_*, JWT_SECRET_KEY, and one provider's API key.
+# DATABASE_URL is overridden by compose and does not need to be correct here.
+
+docker compose --profile app up -d --build
+```
+
+| Service | Image | Published on |
+|---|---|---|
+| `postgres` | `postgres:16-alpine` | 5432 |
+| `api` | built from [`Dockerfile`](Dockerfile) — Python 3.12 + Playwright Chromium | 8000 |
+| `web` | built from [`frontend-vue/Dockerfile`](frontend-vue/Dockerfile) — vite build served by nginx | 5173 |
+
+The app is then on `http://localhost:5173`. nginx serves the SPA and proxies `/api/` to
+`api:8000`, stripping the prefix exactly as the vite dev server does, so the browser makes
+same-origin requests and the frontend needs no build-time API URL.
+
+`api` waits for the database healthcheck before starting, and `DATABASE_URL` is rewritten
+by compose to reach `postgres` by service name — the value in `.env` is only used when you
+run the backend outside Docker.
+
+### Deploying without compose
+
+- A PostgreSQL database reachable via `DATABASE_URL`, with [`init.sql`](init.sql) applied
 - Gemini API access via `GOOGLE_API_KEY` (or OpenAI via `LLM_PROVIDER=openai`)
 - `DEBUG=false`, a generated `JWT_SECRET_KEY`, and `CORS_ORIGINS` listing the frontend
   origin — the app refuses to start if the secret is left at its default or `CORS_ORIGINS`
   contains `*`
-- Playwright Chromium installed in the runtime environment for PDF export
-- Frontend static files built via `npm run build` and served via a reverse proxy (nginx) pointing `/api` to the FastAPI backend
+- Playwright Chromium in the runtime environment for PDF export (the image installs it)
+- `GET /health` is a database-free liveness probe
+
+There is no CI pipeline yet.
+
+### Known gap
+
+`npm run build` runs `vue-tsc && vite build`, and the sources do not typecheck cleanly
+yet, so the frontend image runs `vite build` directly. Restore `npm run build` in
+[`frontend-vue/Dockerfile`](frontend-vue/Dockerfile) once the type errors are fixed.

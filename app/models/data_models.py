@@ -167,6 +167,10 @@ class MasterProfile(BaseModel):
     skills: list[Skill] = Field(default_factory=list)
 
 
+class HealthResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+
+
 class UnclassifiedSection(BaseModel):
     """A resume section that matched none of the four supported categories.
 
