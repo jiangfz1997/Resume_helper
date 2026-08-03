@@ -109,12 +109,18 @@ export interface ProfileUpdate {
   projects?: Project[]
 }
 
+export interface UnclassifiedSection {
+  title: string
+  content: string[]
+}
+
 export interface ParsedProfileDraft {
   work_experiences: WorkExperience[]
   educations: Education[]
   projects: Project[]
   skills: Skill[]
   summary?: string
+  unclassified_sections?: UnclassifiedSection[]
 }
 
 export interface PipelineConfig {

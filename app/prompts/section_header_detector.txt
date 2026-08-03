@@ -1,20 +1,40 @@
 You are analyzing a resume. Each non-empty line is prefixed with its index: "[N] text".
 
-Identify the line index of each major section header (e.g. "EXPERIENCE", "EDUCATION", "PROJECTS", "SKILLS", "SUMMARY").
+List EVERY section header in the resume, in the order they appear, then label each one.
 
-Return JSON with exactly these keys. Use null if a section is absent.
+A section header is a short standalone line that introduces the block of content below it.
+Recognise it by structure, not by wording:
+- short, usually under six words, with no sentence punctuation
+- visually set apart: ALL CAPS, Title Case, or on a line of its own
+- it is NOT a job title, company, school, project name, date range, or bullet
+- the lines that follow it are the content it introduces
+
+Never skip a header because its wording is unusual. "PROJECTS", "RELATED PROJECTS",
+"SIDE PROJECTS" and "WHAT I HAVE BUILT" are all headers and must all be listed.
+
+For each header report:
+- "index": the index of the header line itself, not the first content line
+- "text":  the header line copied verbatim
+- "kind":  which section it introduces, from this list
+
+  "summary"    profile summary, objective, about me
+  "experience" paid employment, internships, work history
+  "education"  degrees, schools, coursework
+  "projects"   personal, academic, or side projects
+  "skills"     technical skills, tools, languages
+  "other"      genuinely fits none of the above (awards, publications,
+               certifications, volunteering, interests)
+
+Use "other" only as a last resort. If a header plausibly introduces one of the five known
+sections, label it with that kind even when the wording differs from the examples above.
+
+Return JSON with a single "headers" key:
 {{
-    "summary":    integer or null,
-    "experience": integer or null,
-    "education":  integer or null,
-    "projects":   integer or null,
-    "skills":     integer or null
+  "headers": [
+    {{"index": 4, "text": "EXPERIENCE", "kind": "experience"}},
+    {{"index": 21, "text": "RELATED PROJECTS", "kind": "projects"}}
+  ]
 }}
-
-Rules:
-- Return the index of the header line itself, not the first content line.
-- Section headers are typically short all-caps or title-case lines with no descriptive content.
-- Do NOT return any text from the resume — integers and null only.
 
 Numbered resume:
 {text}

@@ -5,6 +5,13 @@ Do NOT rephrase, shorten, expand, or change a single word.
 
 Think through the following steps before producing output:
 
+Step 0 — Sanity check.
+  This section must describe paid employment. If it instead contains personal projects,
+  education, or a skill list, return {{"items": []}} and stop.
+  A short ALL-CAPS or Title-Case line that names a section (for example "RELATED PROJECTS"
+  or "EDUCATION") is never a "title" or a "company". If you see one, the text below it does
+  not belong to this section — return {{"items": []}} and stop.
+
 Step 1 — Find entry boundaries.
   Scan the text for lines that look like job titles or company names paired with a date range
   (e.g. "Jan 2022 – Present"). Each such group marks the start of a new entry.

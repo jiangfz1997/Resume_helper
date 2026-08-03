@@ -167,12 +167,25 @@ class MasterProfile(BaseModel):
     skills: list[Skill] = Field(default_factory=list)
 
 
+class UnclassifiedSection(BaseModel):
+    """A resume section that matched none of the four supported categories.
+
+    Surfaced to the user on the import confirmation screen so that content is never
+    dropped silently. Not persisted: it carries no meaning once the user has decided
+    what to do with it.
+    """
+
+    title: str
+    content: list[str] = Field(default_factory=list)
+
+
 class ParsedProfileDraft(BaseModel):
     work_experiences: list[WorkExperience] = Field(default_factory=list)
     educations: list[Education] = Field(default_factory=list)
     projects: list[Project] = Field(default_factory=list)
     skills: list[Skill] = Field(default_factory=list)
     summary: Optional[str] = None
+    unclassified_sections: list[UnclassifiedSection] = Field(default_factory=list)
 
 
 class JobDescription(BaseModel):

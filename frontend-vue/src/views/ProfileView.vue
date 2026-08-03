@@ -177,6 +177,28 @@
             </template>
             <n-text v-else depth="3" style="font-size: 12px">None found.</n-text>
 
+            <template v-if="parsedDraft.unclassified_sections?.length">
+              <n-divider title-placement="left">
+                Unrecognised Sections
+                <n-tag size="tiny" type="warning" style="margin-left: 8px">{{ parsedDraft.unclassified_sections.length }}</n-tag>
+              </n-divider>
+              <n-alert type="warning" style="margin-bottom: 12px">
+                These sections did not match any supported category and will not be imported.
+                Add their content manually after confirming.
+              </n-alert>
+              <n-list>
+                <n-list-item v-for="(sec, i) in parsedDraft.unclassified_sections" :key="i">
+                  <n-thing :title="sec.title">
+                    <template #description>
+                      <ul style="margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: #aaa">
+                        <li v-for="(line, j) in sec.content" :key="j">{{ line }}</li>
+                      </ul>
+                    </template>
+                  </n-thing>
+                </n-list-item>
+              </n-list>
+            </template>
+
             <n-divider />
             <n-space>
               <n-button type="primary" :loading="confirmLoading" @click="runConfirm">Confirm &amp; Add to Profile</n-button>

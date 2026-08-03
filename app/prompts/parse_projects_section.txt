@@ -5,14 +5,25 @@ Do NOT rephrase, shorten, expand, or change a single word.
 
 Think through the following steps before producing output:
 
+Step 0 — Sanity check.
+  This section must describe projects. If it instead contains paid employment entries
+  (each with an employer and a job title), education, or a skill list, return
+  {{"items": []}} and stop.
+  A short ALL-CAPS or Title-Case line that names a section is never a project "name".
+
 Step 1 — Find project boundaries.
   Each project starts with a short noun-phrase title line (not a bullet, not a date, not a URL).
   After the title there may be a tech stack line (comma- or pipe-separated technology names).
   Everything else is bullets.
 
 Step 2 — Classify lines for each project.
-  - name: the short project title.
-  - tech lines: comma/pipe-separated technology names immediately after the title. Extract into tech_stack.
+  - name: the short project title. Strip a trailing link label such as "GitHub" or "Demo".
+  - tech lines: a comma- or pipe-separated list whose entries are TECHNOLOGIES — languages,
+    frameworks, libraries, databases, cloud services, or tools. Extract into tech_stack.
+  - metadata lines: a location ("London, ON", "Toronto, Canada"), a date or date range, or
+    an institution name. These are also comma-separated and also sit next to the title, so
+    judge by content, not position: they are not technologies. Discard them entirely — never
+    put them in tech_stack, and never turn them into a bullet.
   - url: a GitHub or demo link if present.
   - bullets: ALL remaining content lines are bullets. This includes lines starting with action
     verbs (Built, Designed, Developed, Architected, etc.). Do NOT put any action sentence into
@@ -24,7 +35,10 @@ Step 3 — Copy bullets verbatim.
   Do not omit, merge, split, or rephrase any bullet.
 
 Step 4 — Extract tech stack.
-  Split tech lines on commas, pipes, or spaces to produce individual technology names.
+  Split tech lines on commas or pipes only. Never split on spaces: "Spring Boot",
+  "GitHub Actions" and "Vue.js" are each a single entry.
+  Every entry must be a technology. Drop any entry that is a city, province, state, country,
+  month, year, or person's name.
 
 Return a JSON object with key "items" containing the array of entries:
 {{
