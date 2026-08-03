@@ -2,6 +2,27 @@
 
 An LLM-powered resume tailoring system built with FastAPI, LangGraph, and Vue 3. The system parses your existing resume from PDF, analyzes job descriptions, and generates a tailored resume draft through a multi-agent pipeline. An interactive chat assistant allows you to refine the result.
 
+## Demo
+
+**Match report** — semantic fit, per-requirement verdicts with the evidence behind each
+one, and rule-based ATS keyword coverage.
+
+![Match report](docs/media/match-report.gif)
+
+<details>
+<summary>Importing a resume, and analyzing a job description</summary>
+
+A PDF is split into sections and parsed section by section, then previewed before
+anything is written to the profile.
+
+![Importing a resume](docs/media/import-resume.gif)
+
+A job description is analyzed against the stored profile to produce the report above.
+
+![Analyzing a job description](docs/media/analyze-jd.gif)
+
+</details>
+
 ## Features
 
 - **PDF Resume Import** — Upload your resume PDF; a two-phase LLM pipeline extracts and structures your work experience, education, projects, and skills
