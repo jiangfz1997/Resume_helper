@@ -18,6 +18,7 @@ jobs:
     env:
       AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
       AWS_REGION: ${{ vars.AWS_REGION }}
+      LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
       STACK_NAME: ${{ vars.DASHBOARD_STACK_NAME }}
       WEB_BUCKET: ${{ vars.DASHBOARD_WEB_BUCKET }}
       DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
@@ -51,7 +52,7 @@ jobs:
       - name: Validate deployment configuration
         shell: bash
         run: |
-          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME)
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME)
           for name in "${required[@]}"; do
             if [[ -z "${!name}" ]]; then
               echo "Missing GitHub Actions variable: ${name}" >&2
@@ -64,6 +65,15 @@ jobs:
         with:
           role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload dashboard Lambda package
+        shell: bash
+        run: |
+          dashboard_code_key="job-discovery/${GITHUB_SHA}/lambda-dashboard.zip"
+          echo "DASHBOARD_CODE_KEY=${dashboard_code_key}" >> "$GITHUB_ENV"
+          aws s3 cp job-discovery/lambda_dashboard/dist/lambda-dashboard.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${dashboard_code_key}" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
 
       - name: Deploy dashboard API
         run: |
@@ -82,7 +92,9 @@ jobs:
               AllowedOrigin="$DASHBOARD_ORIGIN" \
               CallbackUrl="$DASHBOARD_ORIGIN/auth/callback" \
               LogoutUrl="$DASHBOARD_ORIGIN/jobs" \
-              CognitoDomainPrefix="$COGNITO_DOMAIN_PREFIX"
+              CognitoDomainPrefix="$COGNITO_DOMAIN_PREFIX" \
+              LambdaArtifactBucket="$LAMBDA_ARTIFACT_BUCKET" \
+              DashboardLambdaCodeKey="$DASHBOARD_CODE_KEY"
 
       - name: Read stack outputs
         shell: bash
