@@ -1,0 +1,20 @@
+# Tier B (Indeed / LinkedIn / Glassdoor / ZipRecruiter) transitive dependencies.
+#
+# python-jobspy 1.1.82 pins NUMPY==1.26.3, which has no cp313 wheel. On Python
+# 3.13 pip falls back to a source build and fails wherever no compiler exists,
+# including AWS CloudShell. Install this file first, then jobspy itself with
+# --no-deps so that pin is bypassed:
+#
+#   pip install -r requirements-tierb.txt
+#   pip install --no-deps python-jobspy>=1.1.82
+#
+# Every range below matches jobspy's own declared constraints; numpy is the
+# single deliberate deviation. Verified on Python 3.13 with numpy 2.5.1 /
+# pandas 2.3.3: Indeed and LinkedIn both return rows.
+numpy>=2.1
+pandas>=2.2.3,<3
+beautifulsoup4>=4.12.2,<5
+markdownify>=0.13.1,<0.14
+regex>=2024.4.28,<2025
+requests>=2.31,<3
+tls-client>=1.0.1,<2

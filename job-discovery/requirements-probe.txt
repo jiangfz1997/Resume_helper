@@ -1,0 +1,4 @@
+# Tier A only (Workday / Greenhouse / Lever). Standard library does the HTTP.
+# AWS CloudShell already satisfies both, so Tier A runs there with no install.
+pydantic>=2.7.0
+pyyaml>=6.0

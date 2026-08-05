@@ -1,0 +1,88 @@
+# Phase 0 reachability targets.
+#
+# Workday entries are copied from ApplyPilot's employers.yaml and deliberately
+# span several Workday shards (wd3, wd5, wd10, wd12) because shards sit behind
+# different edges and can be blocked independently.
+#
+# Greenhouse board tokens and Lever company slugs change over time. A
+# not_found result means the token is stale, NOT that the IP was blocked; the
+# probe reports the two separately. Verify a token by opening
+# https://boards-api.greenhouse.io/v1/boards/<token>/jobs in a browser.
+
+workday:
+  - key: td
+    name: TD Bank
+    tenant: td
+    site_id: TD_Bank_Careers
+    base_url: https://td.wd3.myworkdayjobs.com
+  - key: rbc
+    name: RBC
+    tenant: rbc
+    site_id: RBCGLOBAL1
+    base_url: https://rbc.wd3.myworkdayjobs.com
+  - key: cibc
+    name: CIBC
+    tenant: cibc
+    site_id: search
+    base_url: https://cibc.wd3.myworkdayjobs.com
+  - key: desjardins
+    name: Desjardins
+    tenant: desjardins
+    site_id: Desjardins
+    base_url: https://desjardins.wd10.myworkdayjobs.com
+  - key: nvidia
+    name: NVIDIA
+    tenant: nvidia
+    site_id: NVIDIAExternalCareerSite
+    base_url: https://nvidia.wd5.myworkdayjobs.com
+  - key: salesforce
+    name: Salesforce
+    tenant: salesforce
+    site_id: External_Career_Site
+    base_url: https://salesforce.wd12.myworkdayjobs.com
+
+greenhouse:
+  - key: stripe
+    name: Stripe
+    board_token: stripe
+  - key: databricks
+    name: Databricks
+    board_token: databricks
+  - key: figma
+    name: Figma
+    board_token: figma
+
+lever:
+  - key: palantir
+    name: Palantir
+    company: palantir
+  - key: leverdemo
+    name: Lever Demo Board
+    company: leverdemo
+
+aggregator:
+  - key: indeed_ca
+    name: Indeed (Canada)
+    site: indeed
+    search_term: Software Engineer
+    location: Toronto, ON
+    country_indeed: canada
+  - key: linkedin
+    name: LinkedIn
+    site: linkedin
+    search_term: Software Engineer
+    location: Toronto, ON
+  # Broken upstream in jobspy 1.1.82: its location lookup returns HTTP 400 for
+  # every location tried (Toronto / New York / San Francisco / London), from
+  # both residential and AWS egress. Not a location-format problem and not a
+  # block. Kept in the set so a jobspy upgrade is detected automatically.
+  - key: glassdoor
+    name: Glassdoor
+    site: glassdoor
+    search_term: Software Engineer
+    location: Toronto, Ontario, Canada
+  - key: zip_recruiter
+    name: ZipRecruiter
+    site: zip_recruiter
+    search_term: Software Engineer
+    location: Toronto, ON

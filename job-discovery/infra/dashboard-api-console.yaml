@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Read-only authenticated API for the job discovery dashboard
+
+Parameters:
+  RecordsTableName:
+    Type: String
+    Default: job-discovery-records
+  ListingsTableName:
+    Type: String
+    Default: job-discovery-listings
+  AllowedOrigin:
+    Type: String
+    Description: CloudFront dashboard origin, for example https://jobs.example.com
+  CallbackUrl:
+    Type: String
+    Description: Cognito callback URL, for example https://jobs.example.com/auth/callback
+  LogoutUrl:
+    Type: String
+    Description: Cognito logout URL, for example https://jobs.example.com/jobs
+  CognitoDomainPrefix:
+    Type: String
+    Description: Globally unique prefix for the Cognito managed login domain
+
+Resources:
+  DashboardUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: job-dashboard-users
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+
+  DashboardUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: job-dashboard-spa
+      UserPoolId: !Ref DashboardUserPool
+      GenerateSecret: false
+      SupportedIdentityProviders:
+        - COGNITO
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      CallbackURLs:
+        - !Ref CallbackUrl
+      LogoutURLs:
+        - !Ref LogoutUrl
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 7
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  DashboardUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref DashboardUserPool
+
+  DashboardApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+        AllowMethods:
+          - GET
+        MaxAge: 600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 5
+        ThrottlingRateLimit: 2
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: '$request.header.Authorization'
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${DashboardUserPool}
+              audience:
+                - !Ref DashboardUserPoolClient
+
+  DashboardReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: job-dashboard-read
+      CodeUri: s3://job-dashboard-artifacts-492832370104-us-east-1-an/lambda-dashboard.zip
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          RECORDS_TABLE: !Ref RecordsTableName
+          LISTINGS_TABLE: !Ref ListingsTableName
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          REQUIRE_AUTH: 'true'
+      Policies:
+        - Statement:
+            - Sid: ReadDashboardTables
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - dynamodb:Scan
+              Resource:
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RecordsTableName}
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ListingsTableName}
+      Events:
+        ListJobs:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /jobs
+        GetJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /jobs/{job_id}
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${DashboardApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  UserPoolId:
+    Value: !Ref DashboardUserPool
+  UserPoolClientId:
+    Value: !Ref DashboardUserPoolClient
+  CognitoLoginDomain:
+    Value: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com

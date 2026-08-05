@@ -15,16 +15,16 @@
               white-space: nowrap;
               cursor: pointer;
             "
-            @click="router.push(auth.isAuthenticated ? '/generate' : '/auth')"
+            @click="router.push(auth.isAuthenticated ? '/generate' : '/jobs')"
           >
             Resume Tailoring Assistant
           </span>
 
           <n-menu
-            v-if="auth.isAuthenticated"
+            v-if="auth.isAuthenticated || route.path === '/jobs'"
             :value="activeKey"
             mode="horizontal"
-            :options="menuOptions"
+            :options="visibleMenuOptions"
             style="flex: 1"
             @update:value="onNav"
           />
@@ -34,7 +34,7 @@
             <n-button size="small" quaternary @click="logout">Logout</n-button>
           </template>
           <template v-else>
-            <n-button size="small" type="primary" @click="showLogin = true">Sign In</n-button>
+            <n-button size="small" type="primary" @click="signIn">Sign In</n-button>
           </template>
         </n-layout-header>
 
@@ -53,6 +53,8 @@ import { darkTheme, NGlobalStyle } from 'naive-ui'
 import type { GlobalThemeOverrides, MenuOption } from 'naive-ui'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { startCognitoLogout } from './auth/cognito'
+import { authMode } from './auth/config'
 import { useAuthStore } from './stores/auth'
 import LoginModal from './components/LoginModal.vue'
 
@@ -63,7 +65,7 @@ const route = useRoute()
 const activeKey = computed(() => route.path)
 
 const contentStyle = computed(() => {
-  if (route.path === '/generate') {
+  if (route.path === '/generate' || route.path === '/jobs') {
     return { padding: '0', maxWidth: '100%', margin: '0', overflow: 'hidden', height: 'calc(100vh - 56px)' }
   }
   return { padding: '24px', maxWidth: '960px', margin: '0 auto' }
@@ -71,12 +73,15 @@ const contentStyle = computed(() => {
 const showLogin = ref(false)
 
 const menuOptions: MenuOption[] = [
+  { label: 'Jobs', key: '/jobs' },
   { label: 'Generate', key: '/generate' },
   { label: 'Profile', key: '/profile' },
   { label: 'Sessions', key: '/sessions' },
   // DEPRECATED: Templates feature hidden until LaTeX template workflow is redesigned
   // { label: 'Templates', key: '/templates' },
 ]
+
+const visibleMenuOptions = computed(() => authMode === 'cognito' ? menuOptions.slice(0, 1) : auth.isAuthenticated ? menuOptions : menuOptions.slice(0, 1))
 
 const themeOverrides: GlobalThemeOverrides = {
   common: { fontFamilyMono: 'monospace' },
@@ -88,6 +93,18 @@ function onNav(key: string): void {
 
 function logout(): void {
   auth.clearToken()
+  if (authMode === 'cognito') {
+    startCognitoLogout()
+    return
+  }
   router.push('/auth')
+}
+
+function signIn(): void {
+  if (authMode === 'cognito') {
+    router.push('/auth')
+    return
+  }
+  showLogin.value = true
 }
 </script>

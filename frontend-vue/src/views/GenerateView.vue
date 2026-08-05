@@ -1058,6 +1058,19 @@ async function runTailorFull(): Promise<void> {
 onMounted(async () => {
   document.addEventListener('mousedown', onDocMouseDown)
 
+  const dashboardDraft = sessionStorage.getItem('job-dashboard:draft')
+  if (dashboardDraft) {
+    try {
+      const parsed: unknown = JSON.parse(dashboardDraft)
+      if (parsed && typeof parsed === 'object' && 'description' in parsed && typeof parsed.description === 'string') {
+        jdText.value = parsed.description
+      }
+      sessionStorage.removeItem('job-dashboard:draft')
+    } catch {
+      sessionStorage.removeItem('job-dashboard:draft')
+    }
+  }
+
   try {
     const profile = await getProfile(token())
     userName.value = profile.full_name
