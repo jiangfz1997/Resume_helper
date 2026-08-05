@@ -1,5 +1,11 @@
 <template>
-  <n-card title="Authentication" style="max-width: 480px; margin: 40px auto">
+  <n-card v-if="cognitoEnabled" title="Job Dashboard" style="max-width: 480px; margin: 60px auto">
+    <n-space vertical size="large">
+      <n-text depth="3">Sign in with one of the administrator-created accounts.</n-text>
+      <n-button type="primary" block :loading="cognitoLoading" @click="loginWithCognito">Sign in</n-button>
+    </n-space>
+  </n-card>
+  <n-card v-else title="Authentication" style="max-width: 480px; margin: 40px auto">
     <n-tabs v-model:value="tab" type="line" animated>
       <!-- Login -->
       <n-tab-pane name="login" tab="Login">
@@ -41,14 +47,28 @@ import type { FormInst, FormRules } from 'naive-ui'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { loginUser, registerUser } from '../api/client'
+import { startCognitoLogin } from '../auth/cognito'
+import { authMode } from '../auth/config'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
 const router = useRouter()
 
 onMounted(() => {
-  if (auth.isAuthenticated) router.replace('/generate')
+  if (auth.isAuthenticated) router.replace(authMode === 'cognito' ? '/jobs' : '/generate')
 })
+
+const cognitoEnabled = authMode === 'cognito'
+const cognitoLoading = ref(false)
+
+async function loginWithCognito(): Promise<void> {
+  cognitoLoading.value = true
+  try {
+    await startCognitoLogin()
+  } finally {
+    cognitoLoading.value = false
+  }
+}
 
 const tab = ref<'login' | 'register'>('login')
 

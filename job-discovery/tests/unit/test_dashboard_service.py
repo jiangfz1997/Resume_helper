@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
+
+from job_discovery.dashboard.models import DashboardJobQuery
+from job_discovery.dashboard.service import get_dashboard_job, list_dashboard_jobs
+from job_discovery.domain.models import (
+    EligibilityStatus,
+    JobRecord,
+    JobSourceListing,
+    ListingStatus,
+    PostedAtQuality,
+    SourceName,
+    WorkplaceType,
+)
+
+NOW = datetime(2026, 8, 5, tzinfo=timezone.utc)
+
+
+class FakeDashboardReader:
+    def __init__(self, records: list[JobRecord], listings: list[JobSourceListing]) -> None:
+        self.records = records
+        self.listings = listings
+
+    def list_records(self) -> list[JobRecord]:
+        return self.records
+
+    def list_all_listings(self) -> list[JobSourceListing]:
+        return self.listings
+
+    def get_record(self, job_id: UUID) -> JobRecord | None:
+        return next((record for record in self.records if record.job_id == job_id), None)
+
+    def list_listings(self, job_id: UUID) -> list[JobSourceListing]:
+        return [listing for listing in self.listings if listing.job_id == job_id]
+
+
+def _record(title: str, score: int | None, status: EligibilityStatus = EligibilityStatus.ELIGIBLE) -> JobRecord:
+    return JobRecord(
+        job_id=uuid4(),
+        canonical_title=title,
+        canonical_company="Example",
+        canonical_location="Toronto, ON",
+        workplace_type=WorkplaceType.HYBRID,
+        description=f"Description for {title}",
+        description_chars=1000,
+        eligibility_status=status,
+        coarse_score=score,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def _listing(record: JobRecord, source: SourceName, posted_at: datetime | None = NOW) -> JobSourceListing:
+    return JobSourceListing(
+        listing_id=uuid4(),
+        job_id=record.job_id,
+        source=source,
+        source_job_id=str(uuid4()),
+        source_url="https://example.com/job",
+        apply_url_canonical="https://example.com/apply",
+        posted_at=posted_at,
+        posted_at_quality=PostedAtQuality.EXACT,
+        first_seen_at=NOW,
+        last_seen_at=NOW,
+        last_seen_run_id="run-1",
+        status=ListingStatus.ACTIVE,
+    )
+
+
+def test_list_filters_and_joins_sources() -> None:
+    strong = _record("Backend Engineer", 9)
+    weak = _record("QA Engineer", 4)
+    reader = FakeDashboardReader(
+        [weak, strong],
+        [_listing(strong, SourceName.WORKDAY), _listing(strong, SourceName.INDEED), _listing(weak, SourceName.LINKEDIN)],
+    )
+
+    page = list_dashboard_jobs(reader, DashboardJobQuery(min_score=8, source=SourceName.WORKDAY))
+
+    assert page.total == 1
+    assert page.items[0].job_id == strong.job_id
+    assert page.items[0].sources == [SourceName.INDEED, SourceName.WORKDAY]
+
+
+def test_detail_includes_description_and_listings() -> None:
+    record = _record("Software Engineer", 8)
+    reader = FakeDashboardReader([record], [_listing(record, SourceName.WORKDAY)])
+
+    detail = get_dashboard_job(reader, record.job_id)
+
+    assert detail is not None
+    assert detail.description == record.description
+    assert detail.listings[0].apply_url == "https://example.com/apply"
+
+
+def test_list_normalizes_mixed_timezone_timestamps() -> None:
+    older = _record("Older Engineer", 7)
+    newer = _record("Newer Engineer", 8)
+    reader = FakeDashboardReader(
+        [older, newer],
+        [
+            _listing(older, SourceName.INDEED, datetime(2026, 8, 4, tzinfo=timezone.utc)),
+            _listing(newer, SourceName.LINKEDIN, datetime(2026, 8, 5)),
+        ],
+    )
+
+    page = list_dashboard_jobs(reader, DashboardJobQuery())
+
+    assert [item.job_id for item in page.items] == [newer.job_id, older.job_id]

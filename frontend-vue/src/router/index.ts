@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { authMode } from '../auth/config'
 import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
@@ -6,9 +7,15 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: () => (localStorage.getItem('token') ? '/generate' : '/auth'),
+      redirect: () => authMode === 'cognito' && !localStorage.getItem('token') ? '/auth' : '/jobs',
     },
     { path: '/auth', component: () => import('../views/AuthView.vue') },
+    { path: '/auth/callback', component: () => import('../views/AuthCallbackView.vue') },
+    {
+      path: '/jobs',
+      component: () => import('../views/JobsView.vue'),
+      meta: { requiresCloudAuth: true },
+    },
     {
       path: '/profile',
       component: () => import('../views/ProfileView.vue'),
@@ -34,6 +41,9 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+  if (to.meta.requiresCloudAuth && authMode === 'cognito' && !auth.isAuthenticated) {
+    return '/auth'
+  }
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return '/auth'
   }

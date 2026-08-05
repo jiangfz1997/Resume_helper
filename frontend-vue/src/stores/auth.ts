@@ -3,7 +3,8 @@ import { computed, ref } from 'vue'
 
 function isExpired(t: string): boolean {
   try {
-    const payload = JSON.parse(atob(t.split('.')[1]))
+    const segment = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(segment.padEnd(Math.ceil(segment.length / 4) * 4, '=')))
     return typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()
   } catch {
     return true

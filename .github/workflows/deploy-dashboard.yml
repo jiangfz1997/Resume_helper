@@ -1,0 +1,118 @@
+name: Deploy dashboard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: dashboard-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK_NAME: ${{ vars.DASHBOARD_STACK_NAME }}
+      WEB_BUCKET: ${{ vars.DASHBOARD_WEB_BUCKET }}
+      DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      DASHBOARD_ORIGIN: ${{ vars.DASHBOARD_ORIGIN }}
+      COGNITO_DOMAIN_PREFIX: ${{ vars.COGNITO_DOMAIN_PREFIX }}
+      RECORDS_TABLE_NAME: ${{ vars.RECORDS_TABLE_NAME }}
+      LISTINGS_TABLE_NAME: ${{ vars.LISTINGS_TABLE_NAME }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: job-discovery/pyproject.toml
+
+      - name: Install and test job discovery
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./job-discovery[dev]"
+          python -m pytest job-discovery/tests
+
+      - name: Build dashboard Lambda
+        run: python job-discovery/lambda_dashboard/build.py
+
+      - name: Set up AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing GitHub Actions variable: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy dashboard API
+        run: |
+          sam validate --template-file job-discovery/infra/dashboard-api.yaml
+          sam deploy \
+            --template-file job-discovery/infra/dashboard-api.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              RecordsTableName="$RECORDS_TABLE_NAME" \
+              ListingsTableName="$LISTINGS_TABLE_NAME" \
+              AllowedOrigin="$DASHBOARD_ORIGIN" \
+              CallbackUrl="$DASHBOARD_ORIGIN/auth/callback" \
+              LogoutUrl="$DASHBOARD_ORIGIN/jobs" \
+              CognitoDomainPrefix="$COGNITO_DOMAIN_PREFIX"
+
+      - name: Read stack outputs
+        shell: bash
+        run: |
+          api_url=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          client_id=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text)
+          cognito_domain=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='CognitoLoginDomain'].OutputValue" --output text)
+          echo "VITE_JOBS_API_URL=${api_url}" >> "$GITHUB_ENV"
+          echo "VITE_COGNITO_CLIENT_ID=${client_id}" >> "$GITHUB_ENV"
+          echo "VITE_COGNITO_DOMAIN=${cognito_domain}" >> "$GITHUB_ENV"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-vue/package-lock.json
+
+      - name: Build dashboard frontend
+        working-directory: frontend-vue
+        env:
+          VITE_JOB_DATA_SOURCE: api
+          VITE_AUTH_MODE: cognito
+          VITE_COGNITO_REDIRECT_URI: ${{ env.DASHBOARD_ORIGIN }}/auth/callback
+          VITE_COGNITO_LOGOUT_URI: ${{ env.DASHBOARD_ORIGIN }}/jobs
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish dashboard frontend
+        run: |
+          aws s3 sync frontend-vue/dist/ "s3://${WEB_BUCKET}/" --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
