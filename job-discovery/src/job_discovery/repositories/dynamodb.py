@@ -96,6 +96,7 @@ def _record_to_item(record: JobRecord) -> dict[str, Any]:
             "score_version": record.score_version,
             "scored_at": record.scored_at.isoformat() if record.scored_at else None,
             "user_status": record.user_status,
+            "first_discovered_run_id": record.first_discovered_run_id,
             "created_at": record.created_at.isoformat(),
             "updated_at": record.updated_at.isoformat(),
         }
@@ -127,6 +128,7 @@ def _item_to_record(item: dict[str, Any]) -> JobRecord:
         score_version=item.get("score_version"),
         scored_at=datetime.fromisoformat(item["scored_at"]) if item.get("scored_at") else None,
         user_status=item.get("user_status", "new"),
+        first_discovered_run_id=item.get("first_discovered_run_id"),
         created_at=datetime.fromisoformat(item["created_at"]),
         updated_at=datetime.fromisoformat(item["updated_at"]),
     )
@@ -300,6 +302,34 @@ class DynamoDBJobRepository(JobRepository):
                 raise KeyError(f"no JobRecord for {job_id}") from exc
             raise
 
+    def record_requirements(self, job_id: UUID, score: CoarseScore) -> None:
+        from botocore.exceptions import ClientError
+
+        set_clauses: list[str] = []
+        values: dict[str, Any] = {}
+        if score.required_years_min is not None:
+            set_clauses.append("required_years_min = :minimum")
+            values[":minimum"] = score.required_years_min
+        if score.required_years_max is not None:
+            set_clauses.append("required_years_max = :maximum")
+            values[":maximum"] = score.required_years_max
+        if score.requirement_keywords:
+            set_clauses.append("requirement_keywords = :keywords")
+            values[":keywords"] = score.requirement_keywords
+        if not set_clauses:
+            return
+        try:
+            self._records.update_item(
+                Key={"job_id": str(job_id)},
+                UpdateExpression="SET " + ", ".join(set_clauses),
+                ExpressionAttributeValues=values,
+                ConditionExpression="attribute_exists(job_id)",
+            )
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise KeyError(f"no JobRecord for {job_id}") from exc
+            raise
+
     def _find_listing_item(self, source: SourceName, source_job_id: str) -> dict[str, Any] | None:
         """Two consistent primary-key reads, not a GSI query: source_lookup
         maps the (source, source_job_id) straight to a job_id, then the
@@ -409,6 +439,7 @@ class DynamoDBJobRepository(JobRepository):
             eligibility_status=eligibility.status,
             filter_codes=eligibility.codes,
             filter_version=eligibility.filter_version,
+            first_discovered_run_id=candidate.run_id,
             created_at=candidate.observed_at,
             updated_at=candidate.observed_at,
         )

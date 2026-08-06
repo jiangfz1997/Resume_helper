@@ -4,10 +4,15 @@ import { cleanExportedString, nullableString, parseCsv } from './csv'
 import type {
   DashboardJob,
   DashboardJobSummary,
+  DashboardRunSummary,
+  DashboardUserState,
+  DiscoverySettings,
   EligibilityStatus,
   JobDataSource,
   JobListing,
   JobRecord,
+  JobUserStatus,
+  ScoringProfileSettings,
   WorkplaceType,
 } from './models'
 
@@ -26,6 +31,15 @@ function parseScore(value: string): number | null {
   return Number.isFinite(score) ? score : null
 }
 
+function parseKeywords(value: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(cleanExportedString(value) || '[]')
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 function toRecord(row: Record<string, string>): JobRecord {
   return {
     jobId: row.job_id,
@@ -38,6 +52,9 @@ function toRecord(row: Record<string, string>): JobRecord {
     filterCodes: parseFilterCodes(row.filter_codes),
     workplaceType: (row.workplace_type || 'unknown') as WorkplaceType,
     coarseScore: parseScore(row.coarse_score),
+    requiredYearsMin: parseScore(row.required_years_min ?? ''),
+    requiredYearsMax: parseScore(row.required_years_max ?? ''),
+    requirementKeywords: parseKeywords(row.requirement_keywords ?? ''),
     coarseScoreReasoning: nullableString(row.coarse_score_reasoning),
     scoreModel: nullableString(row.score_model),
     scoredAt: nullableString(row.scored_at),
@@ -87,6 +104,7 @@ export class MockJobDataSource implements JobDataSource {
       const jobListings = listingsByJob.get(record.jobId) ?? []
       return {
         ...record,
+        firstDiscoveredRunId: legacyRunId(record.createdAt),
         postedAt: selectPrimaryListing(jobListings)?.postedAt ?? null,
         firstSeenAt: jobListings.map((listing) => listing.firstSeenAt).sort()[0] ?? record.createdAt,
         sources: [...new Set(jobListings.map((listing) => listing.source))].sort(),
@@ -102,5 +120,133 @@ export class MockJobDataSource implements JobDataSource {
 
   async getJob(jobId: string): Promise<DashboardJob | null> {
     return this.jobs.find((job) => job.jobId === jobId) ?? null
+  }
+
+  async listRuns(): Promise<DashboardRunSummary[]> {
+    const grouped = new Map<string, DashboardJob[]>()
+    for (const job of this.jobs) grouped.set(job.firstDiscoveredRunId, [...(grouped.get(job.firstDiscoveredRunId) ?? []), job])
+    return [...grouped.entries()].map(([runId, jobs]) => ({
+      runId,
+      discoveredAt: jobs.map((job) => job.createdAt).sort()[0],
+      newJobsCount: jobs.length,
+    })).sort((left, right) => Date.parse(right.discoveredAt) - Date.parse(left.discoveredAt))
+  }
+
+  async getUserState(): Promise<DashboardUserState> {
+    return loadMockState()
+  }
+
+  async markJobViewed(jobId: string): Promise<void> {
+    const state = loadMockState()
+    const now = new Date().toISOString()
+    const existing = state.jobs.find((job) => job.jobId === jobId)
+    state.jobs = [...state.jobs.filter((job) => job.jobId !== jobId), {
+      jobId,
+      status: existing?.status ?? 'new',
+      firstViewedAt: existing?.firstViewedAt ?? now,
+      lastViewedAt: now,
+      updatedAt: now,
+      coarseScore: existing?.coarseScore ?? null,
+      coarseScoreReasoning: existing?.coarseScoreReasoning ?? null,
+      scoreModel: existing?.scoreModel ?? null,
+      scoreVersion: existing?.scoreVersion ?? null,
+      profileVersion: existing?.profileVersion ?? null,
+      scoredAt: existing?.scoredAt ?? null,
+    }]
+    saveMockState(state)
+  }
+
+  async setJobStatus(jobId: string, status: JobUserStatus): Promise<void> {
+    await this.markJobViewed(jobId)
+    const state = loadMockState()
+    const now = new Date().toISOString()
+    state.jobs = state.jobs.map((job) => job.jobId === jobId ? { ...job, status, updatedAt: now } : job)
+    saveMockState(state)
+  }
+
+  async markRunViewed(runId: string): Promise<void> {
+    const state = loadMockState()
+    state.runs = [...state.runs.filter((run) => run.runId !== runId), { runId, viewedAt: new Date().toISOString() }]
+    saveMockState(state)
+  }
+
+  async getScoringProfile(): Promise<ScoringProfileSettings> {
+    return loadSetting(MOCK_PROFILE_KEY, emptyMockProfile())
+  }
+
+  async saveScoringProfile(profile: ScoringProfileSettings): Promise<ScoringProfileSettings> {
+    const saved = { ...profile, profileVersion: (profile.profileVersion ?? 0) + 1, updatedAt: new Date().toISOString() }
+    localStorage.setItem(MOCK_PROFILE_KEY, JSON.stringify(saved))
+    return saved
+  }
+
+  async getDiscoverySettings(): Promise<DiscoverySettings> {
+    return loadSetting(MOCK_DISCOVERY_KEY, defaultMockDiscovery())
+  }
+
+  async saveDiscoverySettings(settings: DiscoverySettings): Promise<DiscoverySettings> {
+    const saved = { ...settings, configVersion: (settings.configVersion ?? 0) + 1, updatedAt: new Date().toISOString() }
+    localStorage.setItem(MOCK_DISCOVERY_KEY, JSON.stringify(saved))
+    return saved
+  }
+}
+
+const MOCK_STATE_KEY = 'job-dashboard:user-state:v2'
+const MOCK_PROFILE_KEY = 'job-dashboard:scoring-profile:v1'
+const MOCK_DISCOVERY_KEY = 'job-dashboard:discovery-settings:v1'
+
+function legacyRunId(createdAt: string): string {
+  const date = new Date(createdAt)
+  date.setUTCMinutes(0, 0, 0)
+  return `legacy-${date.toISOString().replace('.000Z', 'Z')}`
+}
+
+function loadMockState(): DashboardUserState {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(MOCK_STATE_KEY) ?? '{}')
+    if (parsed && typeof parsed === 'object' && 'jobs' in parsed && 'runs' in parsed) {
+      const state = parsed as DashboardUserState
+      return {
+        ...state,
+        jobs: state.jobs.map((job) => ({
+          ...job,
+          coarseScore: job.coarseScore ?? null,
+          coarseScoreReasoning: job.coarseScoreReasoning ?? null,
+          scoreModel: job.scoreModel ?? null,
+          scoreVersion: job.scoreVersion ?? null,
+          profileVersion: job.profileVersion ?? null,
+          scoredAt: job.scoredAt ?? null,
+        })),
+      }
+    }
+  } catch {
+    // Ignore invalid local development state.
+  }
+  return { jobs: [], runs: [] }
+}
+
+function saveMockState(state: DashboardUserState): void {
+  localStorage.setItem(MOCK_STATE_KEY, JSON.stringify(state))
+}
+
+function loadSetting<T>(key: string, fallback: T): T {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '') as T
+  } catch {
+    return fallback
+  }
+}
+
+function emptyMockProfile(): ScoringProfileSettings {
+  return { skills: [], targetTitles: [], minYearsExperience: null, locationPreference: '', active: true, profileVersion: null, updatedAt: null }
+}
+
+function defaultMockDiscovery(): DiscoverySettings {
+  return {
+    searchTerms: ['Software Engineer', 'SDET', 'QA Engineer'], jobspyLocation: 'Canada', hoursOld: 24,
+    jobspyMaxResults: 15, workdayMaxResults: 10, sites: ['indeed', 'linkedin'], acceptedLocations: [],
+    includeTitleKeywords: ['software engineer', 'software developer', 'backend', 'frontend', 'full stack', 'developer', 'sde', 'swe', 'qa engineer', 'quality assurance', 'qa analyst', 'sdet', 'test engineer', 'test automation', 'automation engineer'],
+    excludeTitleKeywords: ['staff', 'principal', 'director', 'vp', 'vice president', 'head of'],
+    reviewTitleKeywords: ['senior', 'sr.', 'lead'], minDescriptionChars: 300, configVersion: null, updatedAt: null,
   }
 }

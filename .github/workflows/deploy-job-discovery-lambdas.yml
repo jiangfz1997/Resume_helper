@@ -9,6 +9,7 @@ on:
       - "job-discovery/lambda_workday/**"
       - "job-discovery/lambda_jobspy/**"
       - "job-discovery/lambda_dashboard/**"
+      - "job-discovery/lambda_scoring/**"
       - "job-discovery/pyproject.toml"
       - "job-discovery/requirements-*.txt"
       - ".github/workflows/deploy-job-discovery-lambdas.yml"
@@ -33,6 +34,7 @@ jobs:
       WORKDAY_FUNCTION_NAME: ${{ vars.WORKDAY_FUNCTION_NAME }}
       JOBSPY_FUNCTION_NAME: ${{ vars.JOBSPY_FUNCTION_NAME }}
       DASHBOARD_FUNCTION_NAME: ${{ vars.DASHBOARD_FUNCTION_NAME }}
+      SCORING_FUNCTION_NAME: ${{ vars.SCORING_FUNCTION_NAME }}
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -59,6 +61,7 @@ jobs:
           python job-discovery/lambda_workday/build.py
           python job-discovery/lambda_jobspy/build.py
           python job-discovery/lambda_dashboard/build.py
+          python job-discovery/lambda_scoring/build.py
 
       - name: Validate deployment configuration
         shell: bash
@@ -70,6 +73,7 @@ jobs:
             WORKDAY_FUNCTION_NAME
             JOBSPY_FUNCTION_NAME
             DASHBOARD_FUNCTION_NAME
+            SCORING_FUNCTION_NAME
           )
           for name in "${required[@]}"; do
             if [[ -z "${!name}" ]]; then
@@ -97,6 +101,9 @@ jobs:
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
           aws s3 cp job-discovery/lambda_dashboard/dist/lambda-dashboard.zip \
             "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-dashboard.zip" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+          aws s3 cp job-discovery/lambda_scoring/dist/lambda-scoring.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-scoring.zip" \
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
 
       - name: Update Lambda function code
@@ -138,10 +145,12 @@ jobs:
           validate_update "$WORKDAY_FUNCTION_NAME" lambda-workday.zip
           validate_update "$JOBSPY_FUNCTION_NAME" lambda-jobspy.zip
           validate_update "$DASHBOARD_FUNCTION_NAME" lambda-dashboard.zip
+          validate_update "$SCORING_FUNCTION_NAME" lambda-scoring.zip
 
           deploy_function "$WORKDAY_FUNCTION_NAME" lambda-workday.zip
           deploy_function "$JOBSPY_FUNCTION_NAME" lambda-jobspy.zip
           deploy_function "$DASHBOARD_FUNCTION_NAME" lambda-dashboard.zip
+          deploy_function "$SCORING_FUNCTION_NAME" lambda-scoring.zip
 
       - name: Write deployment summary
         shell: bash
@@ -154,4 +163,5 @@ jobs:
             echo "- Workday: \`${WORKDAY_FUNCTION_NAME}\`"
             echo "- JobSpy: \`${JOBSPY_FUNCTION_NAME}\`"
             echo "- Dashboard: \`${DASHBOARD_FUNCTION_NAME}\`"
+            echo "- Personalized scoring: \`${SCORING_FUNCTION_NAME}\`"
           } >> "$GITHUB_STEP_SUMMARY"

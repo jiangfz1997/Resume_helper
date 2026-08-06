@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Read-only authenticated API for the job discovery dashboard
+Description: Legacy console-only dashboard API template (does not create personalized scoring worker)
 
 Parameters:
   RecordsTableName:
@@ -76,6 +76,24 @@ Resources:
       Domain: !Ref CognitoDomainPrefix
       UserPoolId: !Ref DashboardUserPool
 
+  DashboardUserDataTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: job-discovery-user-data
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: entity_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: entity_key
+          KeyType: RANGE
+
   DashboardApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -88,6 +106,7 @@ Resources:
           - Content-Type
         AllowMethods:
           - GET
+          - PUT
         MaxAge: 600
       DefaultRouteSettings:
         ThrottlingBurstLimit: 5
@@ -117,6 +136,7 @@ Resources:
         Variables:
           RECORDS_TABLE: !Ref RecordsTableName
           LISTINGS_TABLE: !Ref ListingsTableName
+          USER_DATA_TABLE: !Ref DashboardUserDataTable
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           REQUIRE_AUTH: 'true'
       Policies:
@@ -130,6 +150,14 @@ Resources:
               Resource:
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RecordsTableName}
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ListingsTableName}
+            - Sid: ReadWriteDashboardUserState
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Resource: !GetAtt DashboardUserDataTable.Arn
       Events:
         ListJobs:
           Type: HttpApi
@@ -143,6 +171,60 @@ Resources:
             ApiId: !Ref DashboardApi
             Method: GET
             Path: /jobs/{job_id}
+        ListRuns:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /runs
+        GetUserState:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /user-state
+        MarkJobViewed:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /jobs/{job_id}/viewed
+        UpdateJobState:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /jobs/{job_id}/state
+        MarkRunViewed:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /runs/{run_id}/viewed
+        GetScoringProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /profile/scoring
+        UpdateScoringProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /profile/scoring
+        GetDiscoverySettings:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /settings/discovery
+        UpdateDiscoverySettings:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /settings/discovery
 
 Outputs:
   ApiUrl:
@@ -153,3 +235,5 @@ Outputs:
     Value: !Ref DashboardUserPoolClient
   CognitoLoginDomain:
     Value: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
+  UserDataTableName:
+    Value: !Ref DashboardUserDataTable

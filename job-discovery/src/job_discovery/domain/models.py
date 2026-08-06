@@ -234,6 +234,7 @@ class JobRecord(BaseModel):
     score_version: str | None = None
     scored_at: datetime | None = None
     user_status: str = "new"
+    first_discovered_run_id: str | None = None
     created_at: datetime
     updated_at: datetime
 

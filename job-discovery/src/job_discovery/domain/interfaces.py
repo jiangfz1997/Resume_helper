@@ -61,6 +61,8 @@ class JobRepository(Protocol):
 
     def record_score(self, job_id: UUID, score: CoarseScore, score_version: str) -> None: ...
 
+    def record_requirements(self, job_id: UUID, score: CoarseScore) -> None: ...
+
 
 class CoarseScorer(Protocol):
     """One call scores one job. Callers decide which records qualify

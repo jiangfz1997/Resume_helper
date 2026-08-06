@@ -79,7 +79,9 @@ def test_first_observation_creates_a_job(repository) -> None:
         CONFIG,
     )
     assert result.status is UpsertStatus.JOB_CREATED
-    assert repository.get_record(result.job_id) is not None
+    record = repository.get_record(result.job_id)
+    assert record is not None
+    assert record.first_discovered_run_id == "run-2026-08-05T09:00:00"
 
 
 def test_same_posting_via_a_second_source_adds_a_listing_not_a_new_job(repository) -> None:
@@ -251,10 +253,40 @@ def test_record_score_persists_jd_requirements(repository) -> None:
     assert record.requirement_keywords == ["Python", "AWS"]
 
 
+def test_record_requirements_does_not_write_a_shared_fit_score(repository) -> None:
+    result = ingest_observation(
+        _observation(SourceName.WORKDAY, "R_requirements", None, datetime(2026, 8, 5, 9, 0), description="x" * 500),
+        repository,
+        CONFIG,
+    )
+    repository.record_requirements(
+        result.job_id,
+        CoarseScore(
+            score=9, reasoning="personal fit", model="fake-model", scored_at=datetime(2026, 8, 5, 10, 0),
+            required_years_min=3, required_years_max=5, requirement_keywords=["Python", "AWS"],
+        ),
+    )
+    record = repository.get_record(result.job_id)
+    assert record is not None
+    assert record.required_years_min == 3
+    assert record.requirement_keywords == ["Python", "AWS"]
+    assert record.coarse_score is None
+
+
 def test_record_score_raises_for_unknown_job(repository) -> None:
     with pytest.raises(KeyError):
         repository.record_score(
             UUID("00000000-0000-0000-0000-000000000000"),
             CoarseScore(score=5, reasoning="x", model="m", scored_at=datetime(2026, 8, 5)),
             score_version="v1",
+        )
+
+
+def test_record_requirements_raises_for_unknown_job(repository) -> None:
+    with pytest.raises(KeyError):
+        repository.record_requirements(
+            UUID("00000000-0000-0000-0000-000000000000"),
+            CoarseScore(
+                score=5, reasoning="x", model="m", scored_at=datetime(2026, 8, 5), required_years_min=2
+            ),
         )

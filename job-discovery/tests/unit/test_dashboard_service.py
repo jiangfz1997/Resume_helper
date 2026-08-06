@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from job_discovery.dashboard.models import DashboardJobQuery
-from job_discovery.dashboard.service import get_dashboard_job, list_dashboard_jobs
+from job_discovery.dashboard.service import get_dashboard_job, list_dashboard_jobs, list_dashboard_runs
 from job_discovery.domain.models import (
     EligibilityStatus,
     JobRecord,
@@ -71,6 +71,9 @@ def _listing(record: JobRecord, source: SourceName, posted_at: datetime | None =
 
 def test_list_filters_and_joins_sources() -> None:
     strong = _record("Backend Engineer", 9)
+    strong.required_years_min = 2
+    strong.required_years_max = 4
+    strong.requirement_keywords = ["Python", "AWS"]
     weak = _record("QA Engineer", 4)
     reader = FakeDashboardReader(
         [weak, strong],
@@ -82,6 +85,9 @@ def test_list_filters_and_joins_sources() -> None:
     assert page.total == 1
     assert page.items[0].job_id == strong.job_id
     assert page.items[0].sources == [SourceName.INDEED, SourceName.WORKDAY]
+    assert page.items[0].required_years_min == 2
+    assert page.items[0].required_years_max == 4
+    assert page.items[0].requirement_keywords == ["Python", "AWS"]
 
 
 def test_detail_includes_description_and_listings() -> None:
@@ -109,3 +115,18 @@ def test_list_normalizes_mixed_timezone_timestamps() -> None:
     page = list_dashboard_jobs(reader, DashboardJobQuery())
 
     assert [item.job_id for item in page.items] == [newer.job_id, older.job_id]
+
+
+def test_runs_group_jobs_by_first_discovery_run_with_legacy_fallback() -> None:
+    current_a = _record("Backend Engineer", 8)
+    current_b = _record("Frontend Engineer", 7)
+    legacy = _record("Legacy Engineer", 6)
+    current_a.first_discovered_run_id = "lambda-2026-08-05T12:00Z"
+    current_b.first_discovered_run_id = "lambda-2026-08-05T12:00Z"
+    legacy.created_at = datetime(2026, 8, 4, 17, 42, tzinfo=timezone.utc)
+    reader = FakeDashboardReader([legacy, current_a, current_b], [])
+
+    page = list_dashboard_runs(reader)
+
+    assert [run.run_id for run in page.items] == ["lambda-2026-08-05T12:00Z", "legacy-2026-08-04T17:00Z"]
+    assert page.items[0].new_jobs_count == 2

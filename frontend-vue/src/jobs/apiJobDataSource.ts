@@ -1,9 +1,14 @@
 import type {
   DashboardJob,
   DashboardJobSummary,
+  DashboardRunSummary,
+  DashboardUserState,
+  DiscoverySettings,
   EligibilityStatus,
   JobDataSource,
   JobListing,
+  JobUserStatus,
+  ScoringProfileSettings,
   WorkplaceType,
 } from './models'
 
@@ -16,6 +21,10 @@ interface ApiJobSummary {
   eligibility_status: EligibilityStatus
   filter_codes: string[]
   coarse_score: number | null
+  required_years_min?: number | null
+  required_years_max?: number | null
+  requirement_keywords?: string[] | null
+  first_discovered_run_id: string
   posted_at: string | null
   first_seen_at: string
   sources: string[]
@@ -51,6 +60,27 @@ interface ApiJobPage {
   total: number
 }
 
+interface ApiRunPage {
+  items: Array<{ run_id: string; discovered_at: string; new_jobs_count: number }>
+}
+
+interface ApiUserState {
+  jobs: Array<{
+    job_id: string
+    status: JobUserStatus
+    first_viewed_at: string | null
+    last_viewed_at: string | null
+    updated_at: string
+    coarse_score: number | null
+    coarse_score_reasoning: string | null
+    score_model: string | null
+    score_version: string | null
+    profile_version: number | null
+    scored_at: string | null
+  }>
+  runs: Array<{ run_id: string; viewed_at: string }>
+}
+
 export class ApiJobDataSource implements JobDataSource {
   constructor(private readonly baseUrl: string, private readonly tokenProvider: () => string | null) {}
 
@@ -69,10 +99,96 @@ export class ApiJobDataSource implements JobDataSource {
     }
   }
 
-  private async request<T>(path: string): Promise<T> {
+  async listRuns(): Promise<DashboardRunSummary[]> {
+    const page = await this.request<ApiRunPage>('/runs')
+    return page.items.map((run) => ({
+      runId: run.run_id,
+      discoveredAt: run.discovered_at,
+      newJobsCount: run.new_jobs_count,
+    }))
+  }
+
+  async getUserState(): Promise<DashboardUserState> {
+    const state = await this.request<ApiUserState>('/user-state')
+    return {
+      jobs: state.jobs.map((job) => ({
+        jobId: job.job_id,
+        status: job.status,
+        firstViewedAt: job.first_viewed_at,
+        lastViewedAt: job.last_viewed_at,
+        updatedAt: job.updated_at,
+        coarseScore: job.coarse_score,
+        coarseScoreReasoning: job.coarse_score_reasoning,
+        scoreModel: job.score_model,
+        scoreVersion: job.score_version,
+        profileVersion: job.profile_version,
+        scoredAt: job.scored_at,
+      })),
+      runs: state.runs.map((run) => ({ runId: run.run_id, viewedAt: run.viewed_at })),
+    }
+  }
+
+  async markJobViewed(jobId: string): Promise<void> {
+    await this.request(`/jobs/${encodeURIComponent(jobId)}/viewed`, { method: 'PUT' })
+  }
+
+  async setJobStatus(jobId: string, status: JobUserStatus): Promise<void> {
+    await this.request(`/jobs/${encodeURIComponent(jobId)}/state`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    })
+  }
+
+  async markRunViewed(runId: string): Promise<void> {
+    await this.request(`/runs/${encodeURIComponent(runId)}/viewed`, { method: 'PUT' })
+  }
+
+  async getScoringProfile(): Promise<ScoringProfileSettings> {
+    const response = await this.request<{ profile: ApiScoringProfile | null }>('/profile/scoring')
+    return response.profile ? toScoringProfile(response.profile) : emptyScoringProfile()
+  }
+
+  async saveScoringProfile(profile: ScoringProfileSettings): Promise<ScoringProfileSettings> {
+    const saved = await this.request<ApiScoringProfile>('/profile/scoring', {
+      method: 'PUT',
+      body: JSON.stringify({
+        skills: profile.skills,
+        target_titles: profile.targetTitles,
+        min_years_experience: profile.minYearsExperience,
+        location_preference: profile.locationPreference || null,
+        active: profile.active,
+      }),
+    })
+    return toScoringProfile(saved)
+  }
+
+  async getDiscoverySettings(): Promise<DiscoverySettings> {
+    return toDiscoverySettings(await this.request<ApiDiscoverySettings>('/settings/discovery'))
+  }
+
+  async saveDiscoverySettings(settings: DiscoverySettings): Promise<DiscoverySettings> {
+    const saved = await this.request<ApiDiscoverySettings>('/settings/discovery', {
+      method: 'PUT', body: JSON.stringify({
+        search_terms: settings.searchTerms, jobspy_location: settings.jobspyLocation,
+        hours_old: settings.hoursOld, jobspy_max_results: settings.jobspyMaxResults,
+        workday_max_results: settings.workdayMaxResults, sites: settings.sites,
+        accepted_locations: settings.acceptedLocations, include_title_keywords: settings.includeTitleKeywords,
+        exclude_title_keywords: settings.excludeTitleKeywords, review_title_keywords: settings.reviewTitleKeywords,
+        min_description_chars: settings.minDescriptionChars,
+      }),
+    })
+    return toDiscoverySettings(saved)
+  }
+
+  private async request<T = { ok: boolean }>(path: string, init: RequestInit = {}): Promise<T> {
     const token = this.tokenProvider()
     const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      ...init,
+      headers: {
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
     })
     if (response.status === 401) {
       localStorage.removeItem('token')
@@ -83,6 +199,51 @@ export class ApiJobDataSource implements JobDataSource {
       throw new JobApiError(response.status, body.detail ?? response.statusText)
     }
     return response.json() as Promise<T>
+  }
+}
+
+interface ApiScoringProfile {
+  skills: string[]
+  target_titles: string[]
+  min_years_experience: number | null
+  location_preference: string | null
+  active: boolean
+  profile_version: number
+  updated_at: string
+}
+
+interface ApiDiscoverySettings {
+  search_terms: string[]
+  jobspy_location: string
+  hours_old: number
+  jobspy_max_results: number
+  workday_max_results: number
+  sites: string[]
+  accepted_locations: string[]
+  include_title_keywords: string[]
+  exclude_title_keywords: string[]
+  review_title_keywords: string[]
+  min_description_chars: number
+  config_version: number
+  updated_at: string | null
+}
+
+function emptyScoringProfile(): ScoringProfileSettings {
+  return { skills: [], targetTitles: [], minYearsExperience: null, locationPreference: '', active: true, profileVersion: null, updatedAt: null }
+}
+
+function toScoringProfile(profile: ApiScoringProfile): ScoringProfileSettings {
+  return { skills: profile.skills, targetTitles: profile.target_titles, minYearsExperience: profile.min_years_experience, locationPreference: profile.location_preference ?? '', active: profile.active, profileVersion: profile.profile_version, updatedAt: profile.updated_at }
+}
+
+function toDiscoverySettings(settings: ApiDiscoverySettings): DiscoverySettings {
+  return {
+    searchTerms: settings.search_terms, jobspyLocation: settings.jobspy_location, hoursOld: settings.hours_old,
+    jobspyMaxResults: settings.jobspy_max_results, workdayMaxResults: settings.workday_max_results,
+    sites: settings.sites, acceptedLocations: settings.accepted_locations,
+    includeTitleKeywords: settings.include_title_keywords, excludeTitleKeywords: settings.exclude_title_keywords,
+    reviewTitleKeywords: settings.review_title_keywords, minDescriptionChars: settings.min_description_chars,
+    configVersion: settings.config_version, updatedAt: settings.updated_at,
   }
 }
 
@@ -102,6 +263,10 @@ function toSummary(job: ApiJobSummary): DashboardJobSummary {
     eligibilityStatus: job.eligibility_status,
     filterCodes: job.filter_codes,
     coarseScore: job.coarse_score,
+    requiredYearsMin: job.required_years_min ?? null,
+    requiredYearsMax: job.required_years_max ?? null,
+    requirementKeywords: job.requirement_keywords ?? [],
+    firstDiscoveredRunId: job.first_discovered_run_id,
     postedAt: job.posted_at,
     firstSeenAt: job.first_seen_at,
     sources: job.sources,

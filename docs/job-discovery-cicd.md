@@ -12,7 +12,7 @@ branch pushes, and manual dispatches when `job-discovery` changes. It:
 
 1. installs the development dependencies;
 2. runs the unit tests;
-3. builds the Workday, JobSpy, and dashboard Lambda packages;
+3. builds the Workday, JobSpy, dashboard, and personalized-scoring Lambda packages;
 4. validates the zip files; and
 5. retains them as a GitHub Actions artifact for seven days.
 
@@ -29,9 +29,10 @@ functions:
 - `job-discovery-workday`
 - `job-discovery-jobspy`
 - `job-dashboard-read`
+- `job-discovery-score`
 
 The probe Lambda is intentionally excluded. A shared source change rebuilds all
-three production functions because every package contains a copy of
+four production functions because every package contains a copy of
 `src/job_discovery`.
 
 The workflow publishes a Lambda version and waits for each update to report
@@ -56,6 +57,7 @@ repository variables for Lambda deployment:
 - `WORKDAY_FUNCTION_NAME` (`job-discovery-workday`)
 - `JOBSPY_FUNCTION_NAME` (`job-discovery-jobspy`)
 - `DASHBOARD_FUNCTION_NAME` (`job-dashboard-read`)
+- `SCORING_FUNCTION_NAME` (`job-discovery-score`)
 
 The existing dashboard workflow additionally requires:
 
@@ -66,6 +68,10 @@ The existing dashboard workflow additionally requires:
 - `COGNITO_DOMAIN_PREFIX`
 - `RECORDS_TABLE_NAME`
 - `LISTINGS_TABLE_NAME`
+- `GEMINI_MODEL`
+
+The dashboard workflow also requires the GitHub Actions secret
+`GEMINI_API_KEY`.
 
 Do not store long-lived AWS access keys in GitHub. Configure the deployment
 role to trust GitHub's OIDC provider and restrict its subject to:
@@ -75,8 +81,9 @@ repo:jiangfz1997/Resume_helper:environment:production
 ```
 
 The role needs `s3:PutObject` for the artifact prefix and
-`s3:GetObject` for uploaded packages, plus `lambda:UpdateFunctionCode` and
-`lambda:GetFunctionConfiguration` for the three functions. A minimal policy for
+`s3:GetObject` for uploaded packages, plus `lambda:UpdateFunctionCode`,
+`lambda:GetFunction`, and `lambda:GetFunctionConfiguration` for the four
+functions. `lambda:GetFunction` is required by the `function-updated-v2` waiter. A minimal policy for
 the code-deployment workflow is:
 
 ```json
@@ -92,12 +99,14 @@ the code-deployment workflow is:
       "Effect": "Allow",
       "Action": [
         "lambda:UpdateFunctionCode",
+        "lambda:GetFunction",
         "lambda:GetFunctionConfiguration"
       ],
       "Resource": [
         "arn:aws:lambda:us-east-1:492832370104:function:job-discovery-workday",
         "arn:aws:lambda:us-east-1:492832370104:function:job-discovery-jobspy",
-        "arn:aws:lambda:us-east-1:492832370104:function:job-dashboard-read"
+        "arn:aws:lambda:us-east-1:492832370104:function:job-dashboard-read",
+        "arn:aws:lambda:us-east-1:492832370104:function:job-discovery-score"
       ]
     }
   ]
@@ -128,9 +137,14 @@ The role trust policy is:
 ```
 
 The dashboard SAM workflow needs its existing CloudFormation, API Gateway,
-Cognito, IAM, S3, and CloudFront deployment permissions as well. The same role
-can be reused initially; splitting infrastructure and code-deployment roles can
-be done later.
+Cognito, IAM, S3, and CloudFront deployment permissions as well. It also needs
+`dynamodb:CreateTable`, `dynamodb:DescribeTable`, `dynamodb:UpdateTable`,
+`dynamodb:DeleteTable`, `dynamodb:TagResource`, `dynamodb:UntagResource`, and
+`dynamodb:ListTagsOfResource` for the retained dashboard user-data table. The
+same role can be reused initially; splitting infrastructure and code-deployment
+roles can be done later. The SAM deploy role also needs EventBridge Scheduler
+lifecycle permissions and scoped IAM role/`iam:PassRole` permissions for the
+scheduled scoring target.
 
 ## Artifact retention and rollback
 

@@ -11,8 +11,10 @@ from job_discovery.dashboard.models import (
     DashboardJobQuery,
     DashboardJobSummary,
     DashboardListing,
+    DashboardRunPage,
+    DashboardRunSummary,
 )
-from job_discovery.domain.models import JobRecord, JobSourceListing, ListingStatus
+from job_discovery.domain.models import EligibilityStatus, JobRecord, JobSourceListing, ListingStatus
 
 
 def list_dashboard_jobs(reader: DashboardJobReader, query: DashboardJobQuery) -> DashboardJobPage:
@@ -42,14 +44,30 @@ def get_dashboard_job(reader: DashboardJobReader, job_id: UUID) -> DashboardJobD
         **summary.model_dump(),
         description=record.description,
         description_chars=record.description_chars,
-        required_years_min=record.required_years_min,
-        required_years_max=record.required_years_max,
         coarse_score_reasoning=record.coarse_score_reasoning,
         score_model=record.score_model,
         score_version=record.score_version,
         scored_at=record.scored_at,
         listings=[_to_listing(listing) for listing in _sort_listings(listings)],
     )
+
+
+def list_dashboard_runs(reader: DashboardJobReader) -> DashboardRunPage:
+    grouped: dict[str, list[JobRecord]] = defaultdict(list)
+    for record in reader.list_records():
+        if record.eligibility_status is EligibilityStatus.EXCLUDED:
+            continue
+        grouped[_first_run_id(record)].append(record)
+    runs = [
+        DashboardRunSummary(
+            run_id=run_id,
+            discovered_at=min((record.created_at for record in records), key=_utc_datetime),
+            new_jobs_count=len(records),
+        )
+        for run_id, records in grouped.items()
+    ]
+    runs.sort(key=lambda run: _utc_datetime(run.discovered_at), reverse=True)
+    return DashboardRunPage(items=runs)
 
 
 def _matches(record: JobRecord, listings: list[JobSourceListing], query: DashboardJobQuery) -> bool:
@@ -82,6 +100,10 @@ def _to_summary(record: JobRecord, listings: list[JobSourceListing]) -> Dashboar
         eligibility_status=record.eligibility_status,
         filter_codes=record.filter_codes,
         coarse_score=record.coarse_score,
+        required_years_min=record.required_years_min,
+        required_years_max=record.required_years_max,
+        requirement_keywords=record.requirement_keywords,
+        first_discovered_run_id=_first_run_id(record),
         posted_at=preferred.posted_at if preferred else None,
         first_seen_at=first_seen_at,
         sources=sources,
@@ -119,6 +141,13 @@ def _sort_listings(listings: list[JobSourceListing]) -> list[JobSourceListing]:
 
 def _sort_timestamp(job: DashboardJobSummary) -> datetime:
     return _utc_datetime(job.posted_at or job.first_seen_at)
+
+
+def _first_run_id(record: JobRecord) -> str:
+    if record.first_discovered_run_id:
+        return record.first_discovered_run_id
+    created_at = _utc_datetime(record.created_at)
+    return f"legacy-{created_at.strftime('%Y-%m-%dT%H:00Z')}"
 
 
 def _utc_datetime(value: datetime | None) -> datetime:
