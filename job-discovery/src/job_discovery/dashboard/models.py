@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -38,6 +39,10 @@ class DashboardJobSummary(BaseModel):
     eligibility_status: EligibilityStatus
     filter_codes: list[FilterCode] = Field(default_factory=list)
     coarse_score: int | None = None
+    required_years_min: int | None = None
+    required_years_max: int | None = None
+    requirement_keywords: list[str] = Field(default_factory=list)
+    first_discovered_run_id: str
     posted_at: datetime | None = None
     first_seen_at: datetime
     sources: list[SourceName] = Field(default_factory=list)
@@ -48,8 +53,6 @@ class DashboardJobSummary(BaseModel):
 class DashboardJobDetail(DashboardJobSummary):
     description: str | None = None
     description_chars: int
-    required_years_min: int | None = None
-    required_years_max: int | None = None
     coarse_score_reasoning: str | None = None
     score_model: str | None = None
     score_version: str | None = None
@@ -61,3 +64,49 @@ class DashboardJobPage(BaseModel):
     schema_version: str = "job-dashboard.v1"
     items: list[DashboardJobSummary]
     total: int
+
+
+class DashboardJobUserStatus(str, Enum):
+    NEW = "new"
+    SAVED = "saved"
+    SELECTED = "selected"
+    APPLIED = "applied"
+    REJECTED = "rejected"
+
+
+class DashboardRunSummary(BaseModel):
+    run_id: str
+    discovered_at: datetime
+    new_jobs_count: int
+
+
+class DashboardRunPage(BaseModel):
+    items: list[DashboardRunSummary]
+
+
+class DashboardJobUserState(BaseModel):
+    job_id: UUID
+    status: DashboardJobUserStatus = DashboardJobUserStatus.NEW
+    first_viewed_at: datetime | None = None
+    last_viewed_at: datetime | None = None
+    updated_at: datetime
+    coarse_score: int | None = None
+    coarse_score_reasoning: str | None = None
+    score_model: str | None = None
+    score_version: str | None = None
+    profile_version: int | None = None
+    scored_at: datetime | None = None
+
+
+class DashboardRunUserState(BaseModel):
+    run_id: str
+    viewed_at: datetime
+
+
+class DashboardUserStateSnapshot(BaseModel):
+    jobs: list[DashboardJobUserState] = Field(default_factory=list)
+    runs: list[DashboardRunUserState] = Field(default_factory=list)
+
+
+class UpdateJobStateRequest(BaseModel):
+    status: DashboardJobUserStatus

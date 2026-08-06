@@ -103,6 +103,17 @@ class InMemoryJobRepository(JobRepository):
         if score.requirement_keywords:
             record.requirement_keywords = score.requirement_keywords
 
+    def record_requirements(self, job_id: UUID, score: CoarseScore) -> None:
+        record = self._records.get(job_id)
+        if record is None:
+            raise KeyError(f"no JobRecord for {job_id}")
+        if score.required_years_min is not None:
+            record.required_years_min = score.required_years_min
+        if score.required_years_max is not None:
+            record.required_years_max = score.required_years_max
+        if score.requirement_keywords:
+            record.requirement_keywords = score.requirement_keywords
+
     # Only these two tiers auto-merge into an existing JobRecord. A real
     # Lambda run against TD showed two different requisitions colliding on
     # COMPANY_TITLE_LOCATION alone (identical title+company+location, but
@@ -191,6 +202,7 @@ class InMemoryJobRepository(JobRepository):
             eligibility_status=eligibility.status,
             filter_codes=eligibility.codes,
             filter_version=eligibility.filter_version,
+            first_discovered_run_id=candidate.run_id,
             created_at=candidate.observed_at,
             updated_at=candidate.observed_at,
         )

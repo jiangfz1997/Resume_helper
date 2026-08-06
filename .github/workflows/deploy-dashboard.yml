@@ -26,6 +26,8 @@ jobs:
       COGNITO_DOMAIN_PREFIX: ${{ vars.COGNITO_DOMAIN_PREFIX }}
       RECORDS_TABLE_NAME: ${{ vars.RECORDS_TABLE_NAME }}
       LISTINGS_TABLE_NAME: ${{ vars.LISTINGS_TABLE_NAME }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -43,8 +45,10 @@ jobs:
           python -m pip install -e "./job-discovery[dev]"
           python -m pytest job-discovery/tests
 
-      - name: Build dashboard Lambda
-        run: python job-discovery/lambda_dashboard/build.py
+      - name: Build dashboard Lambdas
+        run: |
+          python job-discovery/lambda_dashboard/build.py
+          python job-discovery/lambda_scoring/build.py
 
       - name: Set up AWS SAM
         uses: aws-actions/setup-sam@v2
@@ -52,7 +56,7 @@ jobs:
       - name: Validate deployment configuration
         shell: bash
         run: |
-          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME)
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME GEMINI_MODEL GEMINI_API_KEY)
           for name in "${required[@]}"; do
             if [[ -z "${!name}" ]]; then
               echo "Missing GitHub Actions variable: ${name}" >&2
@@ -70,9 +74,14 @@ jobs:
         shell: bash
         run: |
           dashboard_code_key="job-discovery/${GITHUB_SHA}/lambda-dashboard.zip"
+          scoring_code_key="job-discovery/${GITHUB_SHA}/lambda-scoring.zip"
           echo "DASHBOARD_CODE_KEY=${dashboard_code_key}" >> "$GITHUB_ENV"
+          echo "SCORING_CODE_KEY=${scoring_code_key}" >> "$GITHUB_ENV"
           aws s3 cp job-discovery/lambda_dashboard/dist/lambda-dashboard.zip \
             "s3://${LAMBDA_ARTIFACT_BUCKET}/${dashboard_code_key}" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+          aws s3 cp job-discovery/lambda_scoring/dist/lambda-scoring.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${scoring_code_key}" \
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
 
       - name: Deploy dashboard API
@@ -94,7 +103,10 @@ jobs:
               LogoutUrl="$DASHBOARD_ORIGIN/jobs" \
               CognitoDomainPrefix="$COGNITO_DOMAIN_PREFIX" \
               LambdaArtifactBucket="$LAMBDA_ARTIFACT_BUCKET" \
-              DashboardLambdaCodeKey="$DASHBOARD_CODE_KEY"
+              DashboardLambdaCodeKey="$DASHBOARD_CODE_KEY" \
+              ScoringLambdaCodeKey="$SCORING_CODE_KEY" \
+              GeminiApiKey="$GEMINI_API_KEY" \
+              GeminiModel="$GEMINI_MODEL"
 
       - name: Read stack outputs
         shell: bash

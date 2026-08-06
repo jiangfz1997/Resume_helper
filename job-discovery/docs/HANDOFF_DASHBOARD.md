@@ -6,6 +6,13 @@ does not include the separate LangGraph resume backend/frontend — see the
 "Old service" section at the bottom for what's known about that from this
 project's side.
 
+> Update, 2026-08-06: the scoring/profile and dashboard sections below describe
+> the original single-profile implementation and are retained as historical
+> probe evidence. The current branch uses one shared crawler configuration,
+> Cognito-user-specific profiles and assessments, and a separate scheduled
+> `job-discovery-score` Lambda. The authoritative current design is
+> `../../docs/job-discovery-multi-user.md`.
+
 **Status as of 2026-08-05, end of day**: both Lambdas manually verified
 end-to-end against real AWS (search -> normalize -> dedup -> filter ->
 ingest -> Gemini score), repository now has 73 `JobRecord`s accumulated
@@ -107,7 +114,8 @@ This is the table a dashboard reads from for the main job list/cards.
 | `score_model` | string \| absent | e.g. `gemini-3.6-flash` |
 | `score_version` | string \| absent | currently always `"v1"` |
 | `scored_at` | ISO datetime string \| absent | |
-| `user_status` | string | defaults to `"new"` — **free string, no enum yet**. Intended for dashboard-driven states like "applied"/"saved"/"rejected" but nothing currently writes to it except the default. This is likely a field the dashboard will want to update via its own write path. |
+| `user_status` | string | legacy shared field; the dashboard does not use it because user-specific state now lives in its own Cognito-keyed table |
+| `first_discovered_run_id` | string \| absent | stable hourly discovery batch that first created the canonical job; older rows fall back to an hour bucket derived from `created_at` in the dashboard API |
 | `created_at` / `updated_at` | ISO datetime string | |
 
 ### Table: `job-discovery-listings` (PK: `job_id`, SK: `source_job_id_key`)
@@ -133,6 +141,14 @@ in one call — this is how a dashboard would render "seen on: Workday, Indeed".
 | `consecutive_misses` | int | |
 | `last_seen_run_id` | string | |
 | `status` | string enum | `active` \| `stale` \| `closed` — nothing currently transitions this out of `active` |
+
+### Table: Dashboard user state (managed by the dashboard SAM stack)
+
+The authenticated dashboard owns a separate PAY_PER_REQUEST table with
+`user_id` as the partition key and `entity_key` as the sort key. `JOB#<uuid>`
+items store viewed/status state and `RUN#<run_id>` items store whether a user
+opened a discovery batch. This state is not written into the shared JobRecord,
+so the two supported Cognito users remain isolated.
 
 ### Table: `job-discovery-dedup-keys` (PK: `key`)
 

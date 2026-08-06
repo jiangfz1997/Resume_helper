@@ -51,6 +51,7 @@ jobs:
           python job-discovery/lambda_workday/build.py
           python job-discovery/lambda_jobspy/build.py
           python job-discovery/lambda_dashboard/build.py
+          python job-discovery/lambda_scoring/build.py
 
       - name: Validate Lambda packages
         shell: bash
@@ -59,6 +60,7 @@ jobs:
             job-discovery/lambda_workday/dist/lambda-workday.zip
             job-discovery/lambda_jobspy/dist/lambda-jobspy.zip
             job-discovery/lambda_dashboard/dist/lambda-dashboard.zip
+            job-discovery/lambda_scoring/dist/lambda-scoring.zip
           )
           for package in "${packages[@]}"; do
             test -s "$package"
@@ -73,5 +75,6 @@ jobs:
             job-discovery/lambda_workday/dist/lambda-workday.zip
             job-discovery/lambda_jobspy/dist/lambda-jobspy.zip
             job-discovery/lambda_dashboard/dist/lambda-dashboard.zip
+            job-discovery/lambda_scoring/dist/lambda-scoring.zip
           if-no-files-found: error
           retention-days: 7

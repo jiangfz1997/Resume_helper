@@ -17,6 +17,11 @@ const router = createRouter({
       meta: { requiresCloudAuth: true },
     },
     {
+      path: '/job-settings',
+      component: () => import('../views/JobSettingsView.vue'),
+      meta: { requiresCloudAuth: true },
+    },
+    {
       path: '/profile',
       component: () => import('../views/ProfileView.vue'),
       meta: { requiresAuth: true },

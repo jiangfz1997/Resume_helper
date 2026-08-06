@@ -15,7 +15,7 @@
               white-space: nowrap;
               cursor: pointer;
             "
-            @click="router.push(auth.isAuthenticated ? '/generate' : '/jobs')"
+            @click="router.push(authMode === 'cognito' ? '/jobs' : auth.isAuthenticated ? '/generate' : '/jobs')"
           >
             Resume Tailoring Assistant
           </span>
@@ -65,7 +65,7 @@ const route = useRoute()
 const activeKey = computed(() => route.path)
 
 const contentStyle = computed(() => {
-  if (route.path === '/generate' || route.path === '/jobs') {
+  if (route.path === '/generate' || route.path === '/jobs' || route.path === '/job-settings') {
     return { padding: '0', maxWidth: '100%', margin: '0', overflow: 'hidden', height: 'calc(100vh - 56px)' }
   }
   return { padding: '24px', maxWidth: '960px', margin: '0 auto' }
@@ -74,6 +74,7 @@ const showLogin = ref(false)
 
 const menuOptions: MenuOption[] = [
   { label: 'Jobs', key: '/jobs' },
+  { label: 'Job Settings', key: '/job-settings' },
   { label: 'Generate', key: '/generate' },
   { label: 'Profile', key: '/profile' },
   { label: 'Sessions', key: '/sessions' },
@@ -81,7 +82,7 @@ const menuOptions: MenuOption[] = [
   // { label: 'Templates', key: '/templates' },
 ]
 
-const visibleMenuOptions = computed(() => authMode === 'cognito' ? menuOptions.slice(0, 1) : auth.isAuthenticated ? menuOptions : menuOptions.slice(0, 1))
+const visibleMenuOptions = computed(() => authMode === 'cognito' ? menuOptions.slice(0, 2) : auth.isAuthenticated ? menuOptions : menuOptions.slice(0, 1))
 
 const themeOverrides: GlobalThemeOverrides = {
   common: { fontFamilyMono: 'monospace' },

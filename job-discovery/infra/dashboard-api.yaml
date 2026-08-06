@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform:
   - AWS::LanguageExtensions
   - AWS::Serverless-2016-10-31
-Description: Read-only authenticated API for the job discovery dashboard
+Description: Authenticated API for the job discovery dashboard
 
 Parameters:
   RecordsTableName:
@@ -29,6 +29,20 @@ Parameters:
   DashboardLambdaCodeKey:
     Type: String
     Description: Immutable S3 key for the dashboard Lambda deployment package
+  ScoringLambdaCodeKey:
+    Type: String
+    Description: Immutable S3 key for the personalized scoring Lambda deployment package
+  GeminiApiKey:
+    Type: String
+    NoEcho: true
+  GeminiModel:
+    Type: String
+  DedupKeysTableName:
+    Type: String
+    Default: job-discovery-dedup-keys
+  SourceLookupTableName:
+    Type: String
+    Default: job-discovery-source-lookup
 
 Resources:
   DashboardUserPool:
@@ -84,6 +98,24 @@ Resources:
       Domain: !Ref CognitoDomainPrefix
       UserPoolId: !Ref DashboardUserPool
 
+  DashboardUserDataTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: job-discovery-user-data
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: entity_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: entity_key
+          KeyType: RANGE
+
   DashboardApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -96,6 +128,7 @@ Resources:
           - Content-Type
         AllowMethods:
           - GET
+          - PUT
         MaxAge: 600
       DefaultRouteSettings:
         ThrottlingBurstLimit: 5
@@ -127,6 +160,7 @@ Resources:
         Variables:
           RECORDS_TABLE: !Ref RecordsTableName
           LISTINGS_TABLE: !Ref ListingsTableName
+          USER_DATA_TABLE: !Ref DashboardUserDataTable
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           REQUIRE_AUTH: 'true'
       Policies:
@@ -140,6 +174,14 @@ Resources:
               Resource:
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RecordsTableName}
                 - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ListingsTableName}
+            - Sid: ReadWriteDashboardUserState
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:Query
+                - dynamodb:UpdateItem
+              Resource: !GetAtt DashboardUserDataTable.Arn
       Events:
         ListJobs:
           Type: HttpApi
@@ -153,6 +195,108 @@ Resources:
             ApiId: !Ref DashboardApi
             Method: GET
             Path: /jobs/{job_id}
+        ListRuns:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /runs
+        GetUserState:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /user-state
+        MarkJobViewed:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /jobs/{job_id}/viewed
+        UpdateJobState:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /jobs/{job_id}/state
+        MarkRunViewed:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /runs/{run_id}/viewed
+        GetScoringProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /profile/scoring
+        UpdateScoringProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /profile/scoring
+        GetDiscoverySettings:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /settings/discovery
+        UpdateDiscoverySettings:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: PUT
+            Path: /settings/discovery
+
+  PersonalizedScoringFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: job-discovery-score
+      CodeUri:
+        Bucket: !Ref LambdaArtifactBucket
+        Key: !Ref ScoringLambdaCodeKey
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      MemorySize: 256
+      Timeout: 900
+      Environment:
+        Variables:
+          RECORDS_TABLE: !Ref RecordsTableName
+          LISTINGS_TABLE: !Ref ListingsTableName
+          DEDUP_KEYS_TABLE: !Ref DedupKeysTableName
+          SOURCE_LOOKUP_TABLE: !Ref SourceLookupTableName
+          USER_DATA_TABLE: !Ref DashboardUserDataTable
+          GEMINI_API_KEY: !Ref GeminiApiKey
+          GEMINI_MODEL: !Ref GeminiModel
+      Policies:
+        - Statement:
+            - Sid: ScoreJobRecords
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RecordsTableName}
+            - Sid: ReadWritePersonalizedScores
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource: !GetAtt DashboardUserDataTable.Arn
+      Events:
+        ScheduledScoring:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(45 12,17,23 * * ? *)
+            ScheduleExpressionTimezone: UTC
+            Input: '{"limit":8}'
 
 Outputs:
   ApiUrl:
@@ -163,3 +307,7 @@ Outputs:
     Value: !Ref DashboardUserPoolClient
   CognitoLoginDomain:
     Value: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
+  UserDataTableName:
+    Value: !Ref DashboardUserDataTable
+  PersonalizedScoringFunctionName:
+    Value: !Ref PersonalizedScoringFunction
