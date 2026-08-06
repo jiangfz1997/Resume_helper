@@ -57,6 +57,15 @@ class EligibilityStatus(str, Enum):
     REVIEW = "review"
 
 
+class JobCategory(str, Enum):
+    """Which track a posting belongs to. Computed from the title once, at
+    job creation -- add a new value plus a keyword group in filters.py to
+    support another track, no other change needed."""
+
+    SDE = "sde"
+    QA = "qa"
+
+
 class FilterCode(str, Enum):
     LOCATION_MISMATCH = "location_mismatch"
     EXCLUDED_TITLE = "excluded_title"
@@ -225,6 +234,7 @@ class JobRecord(BaseModel):
     # only SOURCE_ID and APPLY_URL/DESCRIPTION_HASH matches auto-merge.
     possible_duplicate_of: UUID | None = None
     duplicate_matched_by: DedupKeyKind | None = None
+    job_category: JobCategory | None = None
     eligibility_status: EligibilityStatus = EligibilityStatus.REVIEW
     filter_codes: list[FilterCode] = Field(default_factory=list)
     filter_version: str | None = None

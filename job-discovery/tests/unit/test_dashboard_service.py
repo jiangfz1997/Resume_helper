@@ -7,6 +7,7 @@ from job_discovery.dashboard.models import DashboardJobQuery
 from job_discovery.dashboard.service import get_dashboard_job, list_dashboard_jobs, list_dashboard_runs
 from job_discovery.domain.models import (
     EligibilityStatus,
+    JobCategory,
     JobRecord,
     JobSourceListing,
     ListingStatus,
@@ -36,7 +37,12 @@ class FakeDashboardReader:
         return [listing for listing in self.listings if listing.job_id == job_id]
 
 
-def _record(title: str, score: int | None, status: EligibilityStatus = EligibilityStatus.ELIGIBLE) -> JobRecord:
+def _record(
+    title: str,
+    score: int | None,
+    status: EligibilityStatus = EligibilityStatus.ELIGIBLE,
+    category: JobCategory | None = None,
+) -> JobRecord:
     return JobRecord(
         job_id=uuid4(),
         canonical_title=title,
@@ -45,6 +51,7 @@ def _record(title: str, score: int | None, status: EligibilityStatus = Eligibili
         workplace_type=WorkplaceType.HYBRID,
         description=f"Description for {title}",
         description_chars=1000,
+        job_category=category,
         eligibility_status=status,
         coarse_score=score,
         created_at=NOW,
@@ -88,6 +95,26 @@ def test_list_filters_and_joins_sources() -> None:
     assert page.items[0].required_years_min == 2
     assert page.items[0].required_years_max == 4
     assert page.items[0].requirement_keywords == ["Python", "AWS"]
+
+
+def test_list_filters_by_job_category() -> None:
+    sde = _record("Backend Engineer", 8, category=JobCategory.SDE)
+    qa = _record("QA Engineer", 6, category=JobCategory.QA)
+    reader = FakeDashboardReader([sde, qa], [_listing(sde, SourceName.WORKDAY), _listing(qa, SourceName.WORKDAY)])
+
+    page = list_dashboard_jobs(reader, DashboardJobQuery(job_category=JobCategory.QA))
+
+    assert [item.job_id for item in page.items] == [qa.job_id]
+    assert page.items[0].job_category is JobCategory.QA
+
+
+def test_list_includes_primary_listing_url_for_cards() -> None:
+    record = _record("Backend Engineer", 8)
+    reader = FakeDashboardReader([record], [_listing(record, SourceName.WORKDAY)])
+
+    page = list_dashboard_jobs(reader, DashboardJobQuery())
+
+    assert page.items[0].primary_listing_url == "https://example.com/apply"
 
 
 def test_detail_includes_description_and_listings() -> None:

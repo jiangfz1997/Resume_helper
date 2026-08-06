@@ -77,6 +77,8 @@ def _matches(record: JobRecord, listings: list[JobSourceListing], query: Dashboa
         return False
     if query.source is not None and not any(listing.source is query.source for listing in listings):
         return False
+    if query.job_category is not None and record.job_category is not query.job_category:
+        return False
     return True
 
 
@@ -97,6 +99,8 @@ def _to_summary(record: JobRecord, listings: list[JobSourceListing]) -> Dashboar
         location=record.canonical_location,
         workplace_type=record.workplace_type,
         salary_text=record.salary_text,
+        job_category=record.job_category,
+        primary_listing_url=(preferred.apply_url_canonical or preferred.source_url) if preferred else None,
         eligibility_status=record.eligibility_status,
         filter_codes=record.filter_codes,
         coarse_score=record.coarse_score,

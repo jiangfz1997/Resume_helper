@@ -11,6 +11,7 @@
 
     <section class="filters">
       <n-input v-model:value="search" clearable placeholder="Search title, company, or location..." class="search" />
+      <n-select v-model:value="category" :options="categoryOptions" />
       <n-select v-model:value="runFilter" :options="runOptions" />
       <n-select v-model:value="eligibility" :options="eligibilityOptions" />
       <n-select v-model:value="score" :options="scoreOptions" />
@@ -44,12 +45,30 @@
               <small v-if="job.requirementKeywords.length > 4">+{{ job.requirementKeywords.length - 4 }}</small>
             </div>
             <footer>
+              <em v-if="job.jobCategory" class="is-category">{{ job.jobCategory.toUpperCase() }}</em>
               <em v-if="!isViewed(job.jobId)" class="is-new">new</em>
               <em :class="`is-${job.eligibilityStatus}`">{{ job.eligibilityStatus }}</em>
               <em v-if="statusFor(job.jobId) !== 'new'" class="user-status">{{ statusLabel(statusFor(job.jobId)) }}</em>
             </footer>
           </div>
-          <div :class="['score', scoreClass(scoreFor(job.jobId))]"><b>{{ scoreFor(job.jobId) ?? '—' }}</b><small>/ 10</small></div>
+          <div class="side-col">
+            <div class="quick-actions">
+              <a
+                v-if="job.primaryListingUrl"
+                :href="job.primaryListingUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open original listing"
+                @click.stop
+              >↗</a>
+              <button
+                :class="{ active: statusFor(job.jobId) === 'rejected' }"
+                :title="statusFor(job.jobId) === 'rejected' ? 'Restore' : 'Not interested'"
+                @click.stop="toggleStatus(job.jobId, 'rejected')"
+              >{{ statusFor(job.jobId) === 'rejected' ? '↩' : '✕' }}</button>
+            </div>
+            <div :class="['score', scoreClass(scoreFor(job.jobId))]"><b>{{ scoreFor(job.jobId) ?? '—' }}</b><small>/ 10</small></div>
+          </div>
         </article>
       </div>
 
@@ -122,12 +141,14 @@ const selectedJobId = ref<string | null>(null)
 const selectedJob = ref<DashboardJob | null>(null)
 const currentProfileVersion = ref<number | null>(null)
 const search = ref('')
+const category = ref('all')
 const runFilter = ref('all')
 const eligibility = ref('actionable')
 const score = ref('all')
 const sort = ref('newest')
 const status = ref<StatusFilter>('pending')
 
+const categoryOptions = [{ label: 'All tracks', value: 'all' }, { label: 'SDE', value: 'sde' }, { label: 'QA', value: 'qa' }]
 const eligibilityOptions = [{ label: 'Actionable roles', value: 'actionable' }, { label: 'Eligible', value: 'eligible' }, { label: 'Needs review', value: 'review' }, { label: 'Excluded', value: 'excluded' }, { label: 'All decisions', value: 'all' }]
 const scoreOptions = [{ label: 'Any score', value: 'all' }, { label: 'Strong · 8+', value: 'strong' }, { label: 'Potential · 5+', value: 'potential' }, { label: 'Not scored', value: 'unscored' }]
 const sortOptions = [{ label: 'Newest first', value: 'newest' }, { label: 'Highest score', value: 'score' }, { label: 'Company A–Z', value: 'company' }]
@@ -142,6 +163,7 @@ const unreadRunCount = computed(() => runs.value.filter((run) => !isRunViewed(ru
 const visibleJobs = computed(() => jobs.value.filter((job) => {
   const query = search.value.trim().toLowerCase()
   if (query && !`${job.title} ${job.company} ${job.location}`.toLowerCase().includes(query)) return false
+  if (category.value !== 'all' && job.jobCategory !== category.value) return false
   if (runFilter.value !== 'all' && job.firstDiscoveredRunId !== runFilter.value) return false
   if (eligibility.value === 'actionable' && job.eligibilityStatus === 'excluded') return false
   if (!['all', 'actionable'].includes(eligibility.value) && job.eligibilityStatus !== eligibility.value) return false
@@ -258,7 +280,7 @@ async function sendToGenerate(job: DashboardJob): Promise<void> {
   if (statusFor(job.jobId) !== 'selected') await toggleStatus(job.jobId, 'selected')
   router.push('/generate')
 }
-function resetFilters(): void { search.value = ''; runFilter.value = 'all'; eligibility.value = 'actionable'; score.value = 'all'; status.value = 'pending' }
+function resetFilters(): void { search.value = ''; category.value = 'all'; runFilter.value = 'all'; eligibility.value = 'actionable'; score.value = 'all'; status.value = 'pending' }
 </script>
 
 <style scoped>
@@ -270,14 +292,16 @@ function resetFilters(): void { search.value = ''; runFilter.value = 'all'; elig
 .snapshot { display:flex; align-items:center; gap:10px; min-width:180px; padding:12px 15px; border:1px solid var(--border); border-radius:10px; background:rgba(18,21,28,.75); }
 .snapshot i { width:8px; height:8px; border-radius:50%; background:#46d19a; box-shadow:0 0 0 4px rgba(70,209,154,.1); }
 .snapshot div { display:flex; flex-direction:column; }.snapshot b{font-size:12px}.snapshot small{color:var(--muted);font-size:10px}
-.filters { display:grid; grid-template-columns:minmax(250px,1fr) repeat(4,155px); gap:8px; max-width:1500px; margin:auto; padding:10px; border:1px solid var(--border); border-radius:10px; background:rgba(18,21,28,.92); }
+.filters { display:grid; grid-template-columns:minmax(250px,1fr) repeat(5,140px); gap:8px; max-width:1500px; margin:auto; padding:10px; border:1px solid var(--border); border-radius:10px; background:rgba(18,21,28,.92); }
 .tabs { display:flex; align-items:center; gap:4px; max-width:1500px; margin:15px auto 10px; }.tabs button{padding:7px 10px;border:0;border-radius:7px;color:var(--muted);background:transparent;font:12px inherit;cursor:pointer}.tabs button:hover,.tabs button.active{color:#edf1f7;background:#1b202b}.tabs button span{margin-left:5px;color:#687487;font-size:10px}.tabs>small{margin-left:auto;color:#687487}
 .workspace { display:grid; grid-template-columns:minmax(390px,.82fr) minmax(520px,1.18fr); gap:12px; max-width:1500px; height:calc(100vh - 250px); min-height:520px; margin:auto; }
 .job-list,.detail{overflow-y:auto;border:1px solid var(--border);border-radius:11px;background:rgba(18,21,28,.9)}
 .detail-loading{display:grid;place-items:center}
 .job-row { display:grid; grid-template-columns:38px 1fr auto; gap:12px; padding:15px; border-bottom:1px solid var(--border); cursor:pointer; }.job-row:hover{background:rgba(255,255,255,.025)}.job-row.selected{background:rgba(76,132,221,.1);box-shadow:inset 3px 0 #5d95ee}.job-row.rejected{opacity:.52}
 .logo { display:grid; place-items:center; width:38px; height:38px; border:1px solid rgba(111,168,255,.24); border-radius:9px; color:#8bb8ff; background:rgba(74,125,207,.1); font:700 11px monospace; }
-.row-main{min-width:0}.topline{display:flex;justify-content:space-between;gap:10px}.topline span{overflow:hidden;color:#aab3c1;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.topline small{color:#667184;font-size:10px}.job-row h2{overflow:hidden;margin:4px 0 7px;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.job-row p{margin:0;color:var(--muted);font-size:10px}.requirements{display:flex;align-items:center;gap:5px;overflow:hidden;margin-top:8px;white-space:nowrap}.requirements span{overflow:hidden;max-width:105px;padding:3px 6px;border:1px solid rgba(255,255,255,.07);border-radius:5px;color:#9da8b8;background:rgba(255,255,255,.035);font-size:9px;text-overflow:ellipsis}.requirements .years{flex:none;border-color:rgba(231,169,75,.2);color:#e7b35b;background:rgba(231,169,75,.08);font-weight:700}.requirements small{flex:none;color:#687487;font-size:9px}.job-row footer{display:flex;gap:7px;margin-top:10px}.job-row em{padding:3px 6px;border-radius:5px;font:700 9px monospace;text-transform:uppercase;font-style:normal}.is-new{color:#8bb8ff;background:rgba(74,125,207,.14)}.is-eligible{color:#53d99f;background:rgba(62,207,142,.1)}.is-review{color:#edb85f;background:rgba(231,169,75,.1)}.is-excluded{color:#e47784;background:rgba(224,88,103,.1)}.user-status{color:#a58af3;background:rgba(161,124,244,.12)}
+.row-main{min-width:0}.topline{display:flex;justify-content:space-between;gap:10px}.topline span{overflow:hidden;color:#aab3c1;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.topline small{color:#667184;font-size:10px}.job-row h2{overflow:hidden;margin:4px 0 7px;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.job-row p{margin:0;color:var(--muted);font-size:10px}.requirements{display:flex;align-items:center;gap:5px;overflow:hidden;margin-top:8px;white-space:nowrap}.requirements span{overflow:hidden;max-width:105px;padding:3px 6px;border:1px solid rgba(255,255,255,.07);border-radius:5px;color:#9da8b8;background:rgba(255,255,255,.035);font-size:9px;text-overflow:ellipsis}.requirements .years{flex:none;border-color:rgba(231,169,75,.2);color:#e7b35b;background:rgba(231,169,75,.08);font-weight:700}.requirements small{flex:none;color:#687487;font-size:9px}.job-row footer{display:flex;gap:7px;margin-top:10px}.job-row em{padding:3px 6px;border-radius:5px;font:700 9px monospace;text-transform:uppercase;font-style:normal}.is-new{color:#8bb8ff;background:rgba(74,125,207,.14)}.is-category{color:#c9a8f5;background:rgba(161,124,244,.12)}.is-eligible{color:#53d99f;background:rgba(62,207,142,.1)}.is-review{color:#edb85f;background:rgba(231,169,75,.1)}.is-excluded{color:#e47784;background:rgba(224,88,103,.1)}.user-status{color:#a58af3;background:rgba(161,124,244,.12)}
+.side-col{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.quick-actions{display:flex;gap:5px}.quick-actions a,.quick-actions button{display:grid;place-items:center;width:23px;height:23px;border:1px solid var(--border);border-radius:6px;color:var(--muted);background:rgba(255,255,255,.03);font-size:12px;line-height:1;text-decoration:none;cursor:pointer}.quick-actions a:hover,.quick-actions button:hover{color:#edf1f7;background:#1b202b}.quick-actions button.active{color:#e47784;border-color:rgba(224,88,103,.35);background:rgba(224,88,103,.1)}
 .score{display:flex;flex-direction:column;align-items:flex-end;min-width:39px}.score b{font-size:19px}.score small{color:#606a7b;font-size:8px}.score-strong{color:#4bd49d}.score-medium{color:#e9b65e}.score-low{color:#e87783}.score-empty{color:#5f6979}
 .detail{padding:23px 25px 30px}.detail>header{display:flex;justify-content:space-between;gap:20px}.detail>header span{color:#8eb8f6;font-size:12px}.detail h2{margin:5px 0 7px;font-size:23px}.detail header p{margin:0;color:var(--muted);font-size:12px}.detail-score{display:flex;flex:none;flex-direction:column;align-items:center;justify-content:center;width:69px;height:61px;border:1px solid currentColor;border-radius:10px}.detail-score b{font-size:24px}.detail-score small{color:#707b8d;font-size:8px;text-transform:uppercase}.actions{display:flex;gap:8px;margin:20px 0;padding-bottom:20px;border-bottom:1px solid var(--border)}.generate{margin-left:auto}
 .reasoning{margin-bottom:23px;padding:15px 17px;border:1px solid rgba(93,149,238,.18);border-radius:9px;background:rgba(65,109,178,.07)}.reasoning.pending{border-color:rgba(231,169,75,.18);background:rgba(231,169,75,.05)}.reasoning p{margin:7px 0 9px;color:#bac3d1;font-size:12px;line-height:1.65}.reasoning small{color:#626e80;font:9px monospace}

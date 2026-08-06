@@ -1,5 +1,6 @@
 import listingsCsv from '../mocks/job-listings.csv?raw'
 import recordsCsv from '../mocks/job-records.csv?raw'
+import { classifyJobCategory } from './category'
 import { cleanExportedString, nullableString, parseCsv } from './csv'
 import type {
   DashboardJob,
@@ -48,6 +49,7 @@ function toRecord(row: Record<string, string>): JobRecord {
     title: cleanExportedString(row.canonical_title) || 'Untitled role',
     description: cleanExportedString(row.description),
     descriptionChars: Number(row.description_chars) || 0,
+    jobCategory: classifyJobCategory(cleanExportedString(row.canonical_title) || ''),
     eligibilityStatus: (row.eligibility_status || 'review') as EligibilityStatus,
     filterCodes: parseFilterCodes(row.filter_codes),
     workplaceType: (row.workplace_type || 'unknown') as WorkplaceType,
@@ -102,14 +104,16 @@ export class MockJobDataSource implements JobDataSource {
 
     this.jobs = parseCsv(recordsCsv).map(toRecord).map((record) => {
       const jobListings = listingsByJob.get(record.jobId) ?? []
+      const primaryListing = selectPrimaryListing(jobListings)
       return {
         ...record,
         firstDiscoveredRunId: legacyRunId(record.createdAt),
-        postedAt: selectPrimaryListing(jobListings)?.postedAt ?? null,
+        postedAt: primaryListing?.postedAt ?? null,
         firstSeenAt: jobListings.map((listing) => listing.firstSeenAt).sort()[0] ?? record.createdAt,
         sources: [...new Set(jobListings.map((listing) => listing.source))].sort(),
+        primaryListingUrl: primaryListing?.applyUrl || primaryListing?.sourceUrl || null,
         listings: jobListings,
-        primaryListing: selectPrimaryListing(jobListings),
+        primaryListing,
       }
     })
   }
