@@ -17,18 +17,18 @@ from job_discovery.domain.models import (
     EligibilityDecision,
     EligibilityStatus,
     FilterCode,
+    JobCategory,
     NormalizedJobCandidate,
     WorkplaceType,
 )
 
 
-# Empty list means "no restriction" (same convention as accepted_locations),
-# so a caller that never sets this keeps the old, more permissive behavior.
-# The default below is a starting point for a software engineer / QA search,
-# not a universal list -- tune it per search, e.g. via the Lambda event.
-# "engineer" alone is deliberately excluded: it would also match Sales
-# Engineer, Field Engineer, Mechanical Engineer, none of which belong here.
-DEFAULT_INCLUDE_TITLE_KEYWORDS: list[str] = [
+# Split by track so classify_category() below can tag a job as SDE or QA.
+# "engineer" alone is deliberately excluded from both: it would also match
+# Sales Engineer, Field Engineer, Mechanical Engineer, none of which belong
+# here. To add a third track later, add another *_TITLE_KEYWORDS list, a
+# JobCategory value, and one more branch in classify_category().
+SDE_TITLE_KEYWORDS: list[str] = [
     "software engineer",
     "software developer",
     "backend",
@@ -43,6 +43,9 @@ DEFAULT_INCLUDE_TITLE_KEYWORDS: list[str] = [
     "developer",
     "sde",
     "swe",
+]
+
+QA_TITLE_KEYWORDS: list[str] = [
     "qa engineer",
     "quality assurance",
     "qa analyst",
@@ -51,6 +54,27 @@ DEFAULT_INCLUDE_TITLE_KEYWORDS: list[str] = [
     "test automation",
     "automation engineer",
 ]
+
+# Empty list means "no restriction" (same convention as accepted_locations),
+# so a caller that never sets this keeps the old, more permissive behavior.
+# The default below is a starting point for a software engineer / QA search,
+# not a universal list -- tune it per search, e.g. via the Lambda event.
+DEFAULT_INCLUDE_TITLE_KEYWORDS: list[str] = [*SDE_TITLE_KEYWORDS, *QA_TITLE_KEYWORDS]
+
+
+def classify_category(normalized_title: str) -> JobCategory | None:
+    """Tag a job as SDE or QA from its title. Independent from
+    apply_hard_filters below on purpose: eligibility decides whether a
+    posting is kept at all, this only decides which track it belongs to, and
+    the two must stay free to change separately. Checked in QA-first order
+    because "automation engineer" and similar QA titles could otherwise also
+    read as a plain "developer"/"engineer" SDE match."""
+
+    if any(keyword in normalized_title for keyword in QA_TITLE_KEYWORDS):
+        return JobCategory.QA
+    if any(keyword in normalized_title for keyword in SDE_TITLE_KEYWORDS):
+        return JobCategory.SDE
+    return None
 
 
 class FilterConfig(BaseModel):

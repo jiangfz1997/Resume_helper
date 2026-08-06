@@ -313,8 +313,13 @@ Resources:
         ScheduledScoring:
           Type: ScheduleV2
           Properties:
-            ScheduleExpression: cron(45 12,17,23 * * ? *)
-            ScheduleExpressionTimezone: UTC
+            # 45 minutes after each crawl. The crawl schedule itself lives
+            # outside this template (job-discovery-workday-schedule /
+            # job-discovery-jobspy-schedule, EventBridge Scheduler,
+            # America/Toronto) -- keep these two in sync by hand if either
+            # changes, since SAM doesn't own the crawler Lambdas.
+            ScheduleExpression: cron(45 10,14,20 * * ? *)
+            ScheduleExpressionTimezone: America/Toronto
             Input: '{"limit":20}'
 
 Outputs:

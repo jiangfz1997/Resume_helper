@@ -39,6 +39,7 @@ from job_discovery.domain.models import (
     EligibilityDecision,
     EligibilityStatus,
     FilterCode,
+    JobCategory,
     JobQuery,
     JobRecord,
     JobSourceListing,
@@ -78,6 +79,7 @@ def _record_to_item(record: JobRecord) -> dict[str, Any]:
             "canonical_company": record.canonical_company,
             "canonical_location": record.canonical_location,
             "workplace_type": record.workplace_type.value,
+            "job_category": record.job_category.value if record.job_category else None,
             "description": record.description,
             "description_chars": record.description_chars,
             "description_hash": record.description_hash,
@@ -110,6 +112,7 @@ def _item_to_record(item: dict[str, Any]) -> JobRecord:
         canonical_company=item["canonical_company"],
         canonical_location=item.get("canonical_location"),
         workplace_type=WorkplaceType(item["workplace_type"]),
+        job_category=JobCategory(item["job_category"]) if item.get("job_category") else None,
         description=item.get("description"),
         description_chars=int(item["description_chars"]),
         description_hash=item.get("description_hash"),
@@ -202,6 +205,7 @@ class DynamoDBJobRepository(JobRepository):
         candidate: NormalizedJobCandidate,
         eligibility: EligibilityDecision,
         keys: list[DedupKey],
+        category: JobCategory | None = None,
     ) -> UpsertResult:
         existing_item = self._find_listing_item(candidate.source, candidate.source_job_id)
         if existing_item is not None:
@@ -212,7 +216,9 @@ class DynamoDBJobRepository(JobRepository):
             return self._add_listing_to_job(merge_job_id, candidate, eligibility, keys, merge_matched_by)
 
         weak_candidate_job_id = self._find_weak_candidate(keys)
-        return self._create_job(candidate, eligibility, keys, possible_duplicate_of=weak_candidate_job_id)
+        return self._create_job(
+            candidate, eligibility, keys, category, possible_duplicate_of=weak_candidate_job_id
+        )
 
     def get_record(self, job_id: UUID) -> JobRecord | None:
         item = self._records.get_item(Key={"job_id": str(job_id)}, ConsistentRead=True).get("Item")
@@ -422,6 +428,7 @@ class DynamoDBJobRepository(JobRepository):
         candidate: NormalizedJobCandidate,
         eligibility: EligibilityDecision,
         keys: list[DedupKey],
+        category: JobCategory | None = None,
         possible_duplicate_of: UUID | None = None,
     ) -> UpsertResult:
         job = JobRecord(
@@ -434,6 +441,7 @@ class DynamoDBJobRepository(JobRepository):
             description_chars=candidate.description_chars,
             description_hash=candidate.description_hash,
             salary_text=candidate.salary_text,
+            job_category=category,
             possible_duplicate_of=possible_duplicate_of,
             duplicate_matched_by=DedupKeyKind.COMPANY_TITLE_LOCATION if possible_duplicate_of else None,
             eligibility_status=eligibility.status,

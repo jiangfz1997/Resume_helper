@@ -1,6 +1,7 @@
 export type EligibilityStatus = 'eligible' | 'review' | 'excluded'
 export type WorkplaceType = 'remote' | 'hybrid' | 'onsite' | 'unknown'
 export type JobUserStatus = 'new' | 'saved' | 'selected' | 'applied' | 'rejected'
+export type JobCategory = 'sde' | 'qa'
 export type JobLifecycleStatus = 'active' | 'stale' | 'archived'
 
 export interface JobRecord {
@@ -10,6 +11,7 @@ export interface JobRecord {
   title: string
   description: string
   descriptionChars: number
+  jobCategory: JobCategory | null
   eligibilityStatus: EligibilityStatus
   filterCodes: string[]
   workplaceType: WorkplaceType
@@ -43,6 +45,8 @@ export interface DashboardJobSummary {
   company: string
   location: string
   title: string
+  jobCategory: JobCategory | null
+  primaryListingUrl: string | null
   eligibilityStatus: EligibilityStatus
   filterCodes: string[]
   workplaceType: WorkplaceType

@@ -21,7 +21,14 @@ from moto import mock_aws
 
 from job_discovery.application.ingest import ingest_observation
 from job_discovery.domain.filters import FilterConfig
-from job_discovery.domain.models import CoarseScore, DedupKeyKind, SourceJobObservation, SourceName, UpsertStatus
+from job_discovery.domain.models import (
+    CoarseScore,
+    DedupKeyKind,
+    JobCategory,
+    SourceJobObservation,
+    SourceName,
+    UpsertStatus,
+)
 from job_discovery.repositories.dynamodb import DynamoDBJobRepository
 from job_discovery.repositories.dynamodb_schema import create_tables
 from job_discovery.repositories.memory import InMemoryJobRepository
@@ -82,6 +89,28 @@ def test_first_observation_creates_a_job(repository) -> None:
     record = repository.get_record(result.job_id)
     assert record is not None
     assert record.first_discovered_run_id == "run-2026-08-05T09:00:00"
+
+
+def test_ingest_tags_job_category_from_title(repository) -> None:
+    sde = ingest_observation(
+        _observation(SourceName.WORKDAY, "R_1", None, datetime(2026, 8, 5, 9, 0), title="Backend Developer"),
+        repository,
+        CONFIG,
+    )
+    qa = ingest_observation(
+        _observation(SourceName.WORKDAY, "R_2", None, datetime(2026, 8, 5, 9, 0), title="QA Engineer"),
+        repository,
+        CONFIG,
+    )
+    other = ingest_observation(
+        _observation(SourceName.WORKDAY, "R_3", None, datetime(2026, 8, 5, 9, 0), title="CNC Machinist"),
+        repository,
+        CONFIG,
+    )
+
+    assert repository.get_record(sde.job_id).job_category is JobCategory.SDE
+    assert repository.get_record(qa.job_id).job_category is JobCategory.QA
+    assert repository.get_record(other.job_id).job_category is None
 
 
 def test_same_posting_via_a_second_source_adds_a_listing_not_a_new_job(repository) -> None:

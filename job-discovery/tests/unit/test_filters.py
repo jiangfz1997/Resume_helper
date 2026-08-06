@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from job_discovery.domain.filters import FilterConfig, apply_hard_filters
-from job_discovery.domain.models import EligibilityStatus, FilterCode, SourceJobObservation, SourceName
+from job_discovery.domain.filters import FilterConfig, apply_hard_filters, classify_category
+from job_discovery.domain.models import EligibilityStatus, FilterCode, JobCategory, SourceJobObservation, SourceName
 from job_discovery.domain.normalize import build_candidate
 
 CONFIG = FilterConfig(filter_version="v1", min_description_chars=300)
@@ -87,3 +87,17 @@ def test_empty_include_list_disables_the_relevance_check() -> None:
     config = FilterConfig(filter_version="v1", include_title_keywords=[], min_description_chars=0)
     decision = apply_hard_filters(_candidate("CNC Machinist/Programmer", 500), config)
     assert FilterCode.TITLE_NOT_RELEVANT not in decision.codes
+
+
+def test_classify_category_tags_sde_titles() -> None:
+    assert classify_category("backend developer") is JobCategory.SDE
+    assert classify_category("senior software engineer") is JobCategory.SDE
+
+
+def test_classify_category_tags_qa_titles() -> None:
+    assert classify_category("qa engineer") is JobCategory.QA
+    assert classify_category("sdet") is JobCategory.QA
+
+
+def test_classify_category_is_none_for_unrelated_titles() -> None:
+    assert classify_category("cnc machinist/programmer") is None

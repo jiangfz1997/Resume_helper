@@ -19,6 +19,7 @@ from job_discovery.domain.models import (
     DedupKeyKind,
     DedupMatch,
     EligibilityDecision,
+    JobCategory,
     JobQuery,
     JobRecord,
     JobSourceListing,
@@ -43,6 +44,7 @@ class InMemoryJobRepository(JobRepository):
         candidate: NormalizedJobCandidate,
         eligibility: EligibilityDecision,
         keys: list[DedupKey],
+        category: JobCategory | None = None,
     ) -> UpsertResult:
         existing_listing_id = self._listing_by_source.get((candidate.source, candidate.source_job_id))
         if existing_listing_id is not None:
@@ -53,7 +55,9 @@ class InMemoryJobRepository(JobRepository):
             return self._add_listing_to_job(merge_job_id, candidate, eligibility, keys, merge_matched_by)
 
         weak_candidate_job_id = self._find_weak_candidate(keys)
-        return self._create_job(candidate, eligibility, keys, possible_duplicate_of=weak_candidate_job_id)
+        return self._create_job(
+            candidate, eligibility, keys, category, possible_duplicate_of=weak_candidate_job_id
+        )
 
     def get_record(self, job_id: UUID) -> JobRecord | None:
         return self._records.get(job_id)
@@ -185,6 +189,7 @@ class InMemoryJobRepository(JobRepository):
         candidate: NormalizedJobCandidate,
         eligibility: EligibilityDecision,
         keys: list[DedupKey],
+        category: JobCategory | None = None,
         possible_duplicate_of: UUID | None = None,
     ) -> UpsertResult:
         job = JobRecord(
@@ -197,6 +202,7 @@ class InMemoryJobRepository(JobRepository):
             description_chars=candidate.description_chars,
             description_hash=candidate.description_hash,
             salary_text=candidate.salary_text,
+            job_category=category,
             possible_duplicate_of=possible_duplicate_of,
             duplicate_matched_by=DedupKeyKind.COMPANY_TITLE_LOCATION if possible_duplicate_of else None,
             eligibility_status=eligibility.status,

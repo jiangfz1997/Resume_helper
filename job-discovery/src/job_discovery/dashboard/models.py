@@ -6,13 +6,22 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from job_discovery.domain.models import EligibilityStatus, FilterCode, ListingStatus, PostedAtQuality, SourceName, WorkplaceType
+from job_discovery.domain.models import (
+    EligibilityStatus,
+    FilterCode,
+    JobCategory,
+    ListingStatus,
+    PostedAtQuality,
+    SourceName,
+    WorkplaceType,
+)
 
 
 class DashboardJobQuery(BaseModel):
     eligibility_status: EligibilityStatus | None = None
     min_score: int | None = Field(default=None, ge=1, le=10)
     source: SourceName | None = None
+    job_category: JobCategory | None = None
     limit: int = Field(default=50, ge=1, le=500)
 
 
@@ -42,6 +51,8 @@ class DashboardJobSummary(BaseModel):
     location: str | None = None
     workplace_type: WorkplaceType
     salary_text: str | None = None
+    job_category: JobCategory | None = None
+    primary_listing_url: str | None = None
     eligibility_status: EligibilityStatus
     filter_codes: list[FilterCode] = Field(default_factory=list)
     coarse_score: int | None = None

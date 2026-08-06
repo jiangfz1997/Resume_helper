@@ -5,6 +5,7 @@ import type {
   DashboardUserState,
   DiscoverySettings,
   EligibilityStatus,
+  JobCategory,
   JobDataSource,
   JobListing,
   JobUserStatus,
@@ -19,6 +20,8 @@ interface ApiJobSummary {
   company: string
   location: string | null
   workplace_type: WorkplaceType
+  job_category: JobCategory | null
+  primary_listing_url: string | null
   eligibility_status: EligibilityStatus
   filter_codes: string[]
   coarse_score: number | null
@@ -298,6 +301,8 @@ function toSummary(job: ApiJobSummary): DashboardJobSummary {
     company: job.company,
     location: job.location ?? 'Location unavailable',
     workplaceType: job.workplace_type,
+    jobCategory: job.job_category ?? null,
+    primaryListingUrl: job.primary_listing_url ?? null,
     eligibilityStatus: job.eligibility_status,
     filterCodes: job.filter_codes,
     coarseScore: job.coarse_score,

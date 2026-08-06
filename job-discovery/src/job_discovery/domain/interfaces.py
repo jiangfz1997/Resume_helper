@@ -11,6 +11,7 @@ from job_discovery.domain.models import (
     DedupKey,
     DedupMatch,
     EligibilityDecision,
+    JobCategory,
     JobQuery,
     JobRecord,
     JobSourceListing,
@@ -47,6 +48,7 @@ class JobRepository(Protocol):
         candidate: NormalizedJobCandidate,
         eligibility: EligibilityDecision,
         keys: list[DedupKey],
+        category: JobCategory | None = None,
     ) -> UpsertResult: ...
 
     def get_record(self, job_id: UUID) -> JobRecord | None: ...

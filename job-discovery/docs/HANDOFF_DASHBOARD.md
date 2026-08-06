@@ -179,15 +179,27 @@ implements steps 1-2 server-side if the dashboard backend calls into this
 Python package directly rather than re-implementing DynamoDB access; `filter
 by source` and `min_score` are also supported by `JobQuery`.
 
-## 5. EventBridge schedule (configured 2026-08-05)
+## 5. EventBridge schedule (configured 2026-08-05, migrated to Scheduler 2026-08-06)
 
-One rule, `job-discovery-schedule`, cron `cron(0 12,17,23 * * ? *)` (UTC) =
-08:00/13:00/19:00 America/Toronto during EDT. Two targets, one per Lambda,
-each with a **Constant (JSON text)** input — this is the fixed
-`ScoringProfile` + search params baked in, since a scheduled run has no
-human to fill in a Test event. This profile is duplicated in both targets'
-JSON, not read from any shared store (see open item below: not persisted
-anywhere else).
+Two EventBridge Scheduler schedules, `job-discovery-workday-schedule` and
+`job-discovery-jobspy-schedule`, each with a single Lambda target and cron
+`cron(0 10,14,20 * * ? *)` with `ScheduleExpressionTimezone: America/Toronto`
+— always fires at 10:00/14:00/20:00 local Toronto time, self-adjusting across
+DST. Both use a shared IAM role, `job-discovery-scheduler-crawlers`, scoped to
+`lambda:InvokeFunction` on just these two functions. Each target has a
+**Constant (JSON) input** — this is the fixed `ScoringProfile` + search params
+baked in, since a scheduled run has no human to fill in a Test event. This
+profile is duplicated in both targets' JSON, not read from any shared store
+(see open item below: not persisted anywhere else).
+
+These two schedules are not defined in this repo's IaC (they predate it and
+were originally a plain `AWS::Events::Rule`, which is UTC-only and does not
+support a timezone — that limitation is what caused the 2026-08-06 drift this
+migration fixed). The scoring schedule in `infra/dashboard-api.yaml`
+(`ScheduledScoring`, 45 minutes after each crawl) is SAM-managed and was
+updated in the same change to `cron(45 10,14,20 * * ? *)` /
+`America/Toronto` to stay in sync — if the crawl times ever change again,
+update both by hand.
 
 Target: `job-discovery-workday`
 ```json
@@ -219,10 +231,6 @@ Target: `job-discovery-jobspy`
 Note `accepted_locations: []` — see `filters.py`'s convention, empty list
 means no hard location filter at all (Canada-wide). `location_preference`
 is soft, only used by Gemini scoring, not by `apply_hard_filters()`.
-
-Caveat: this cron is UTC and does not shift with US/Canada DST. When EDT
-ends (~November), the actual local trigger times will drift by an hour
-until the cron is manually updated.
 
 ## 6. Lambda deployment details (for the "old service to cloud" half of this handoff)
 
