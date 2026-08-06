@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from job_discovery.dashboard.interfaces import DashboardJobReader
@@ -11,8 +11,13 @@ from job_discovery.dashboard.models import (
     DashboardJobQuery,
     DashboardJobSummary,
     DashboardListing,
+    DashboardScoringQueue,
     DashboardRunPage,
     DashboardRunSummary,
+    DiscoveryRunReport,
+    DashboardJobUserState,
+    DashboardJobUserStatus,
+    JobLifecycleStatus,
 )
 from job_discovery.domain.models import EligibilityStatus, JobRecord, JobSourceListing, ListingStatus
 
@@ -52,13 +57,15 @@ def get_dashboard_job(reader: DashboardJobReader, job_id: UUID) -> DashboardJobD
     )
 
 
-def list_dashboard_runs(reader: DashboardJobReader) -> DashboardRunPage:
+def list_dashboard_runs(
+    reader: DashboardJobReader, reports: list[DiscoveryRunReport] | None = None
+) -> DashboardRunPage:
     grouped: dict[str, list[JobRecord]] = defaultdict(list)
     for record in reader.list_records():
         if record.eligibility_status is EligibilityStatus.EXCLUDED:
             continue
         grouped[_first_run_id(record)].append(record)
-    runs = [
+    fallback_runs = [
         DashboardRunSummary(
             run_id=run_id,
             discovered_at=min((record.created_at for record in records), key=_utc_datetime),
@@ -66,8 +73,75 @@ def list_dashboard_runs(reader: DashboardJobReader) -> DashboardRunPage:
         )
         for run_id, records in grouped.items()
     ]
+    if not reports:
+        fallback_runs.sort(key=lambda run: _utc_datetime(run.discovered_at), reverse=True)
+        return DashboardRunPage(items=fallback_runs)
+
+    fallback_by_id = {run.run_id: run for run in fallback_runs}
+    reports_by_run: dict[str, list[DiscoveryRunReport]] = defaultdict(list)
+    for report in reports:
+        reports_by_run[report.run_id].append(report)
+    runs: list[DashboardRunSummary] = []
+    for run_id in set(fallback_by_id) | set(reports_by_run):
+        parts = reports_by_run.get(run_id, [])
+        fallback = fallback_by_id.get(run_id)
+        errors = sum(part.error_count for part in parts)
+        observed = sum(part.observed_count for part in parts)
+        runs.append(DashboardRunSummary(
+            run_id=run_id,
+            discovered_at=min((part.started_at for part in parts), default=fallback.discovered_at if fallback else datetime.now(timezone.utc)),
+            new_jobs_count=sum(part.new_jobs_count for part in parts) if parts else fallback.new_jobs_count,
+            observed_count=observed,
+            eligible_count=sum(part.eligible_count for part in parts),
+            review_count=sum(part.review_count for part in parts),
+            excluded_count=sum(part.excluded_count for part in parts),
+            error_count=errors,
+            sources=sorted({source for part in parts for source in part.sources}),
+            status="failed" if errors and not observed else "partial" if errors else "ok",
+        ))
     runs.sort(key=lambda run: _utc_datetime(run.discovered_at), reverse=True)
     return DashboardRunPage(items=runs)
+
+
+def get_scoring_queue(
+    reader: DashboardJobReader,
+    states: list[DashboardJobUserState],
+    profile_version: int | None,
+) -> DashboardScoringQueue:
+    listings_by_job: dict[UUID, list[JobSourceListing]] = defaultdict(list)
+    for listing in reader.list_all_listings():
+        listings_by_job[listing.job_id].append(listing)
+    current_scores = {
+        state.job_id for state in states
+        if state.coarse_score is not None and state.profile_version == profile_version
+    }
+    queued = {
+        state.job_id for state in states
+        if state.scoring_status == "queued" and state.scoring_profile_version == profile_version
+    }
+    failed = {
+        state.job_id for state in states
+        if state.scoring_status == "failed" and state.scoring_profile_version == profile_version
+    }
+    skipped = {
+        state.job_id for state in states
+        if state.status in {DashboardJobUserStatus.APPLIED, DashboardJobUserStatus.REJECTED}
+    }
+    eligible = [record for record in reader.list_records() if record.eligibility_status is EligibilityStatus.ELIGIBLE]
+    archived = {
+        record.job_id for record in eligible
+        if _lifecycle_status(record, listings_by_job.get(record.job_id, [])) is JobLifecycleStatus.ARCHIVED
+    }
+    candidates = {record.job_id for record in eligible} - archived - skipped
+    unscored = candidates - current_scores
+    return DashboardScoringQueue(
+        eligible_total=len(eligible),
+        scored_current=len(candidates & current_scores),
+        pending=len(unscored - queued - failed),
+        queued=len(unscored & queued),
+        failed=len(unscored & failed),
+        archived_skipped=len(archived),
+    )
 
 
 def _matches(record: JobRecord, listings: list[JobSourceListing], query: DashboardJobQuery) -> bool:
@@ -90,6 +164,7 @@ def _to_summary(record: JobRecord, listings: list[JobSourceListing]) -> Dashboar
         default=record.created_at,
     )
     sources = sorted({listing.source for listing in listings}, key=lambda source: source.value)
+    last_seen_at = max((listing.last_seen_at for listing in listings), key=_utc_datetime, default=record.updated_at)
     return DashboardJobSummary(
         job_id=record.job_id,
         title=record.canonical_title,
@@ -109,7 +184,19 @@ def _to_summary(record: JobRecord, listings: list[JobSourceListing]) -> Dashboar
         sources=sources,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        last_seen_at=last_seen_at,
+        lifecycle_status=_lifecycle_status(record, listings),
     )
+
+
+def _lifecycle_status(record: JobRecord, listings: list[JobSourceListing]) -> JobLifecycleStatus:
+    last_seen = max((listing.last_seen_at for listing in listings), key=_utc_datetime, default=record.updated_at)
+    age = datetime.now(timezone.utc) - _utc_datetime(last_seen)
+    if age >= timedelta(days=30):
+        return JobLifecycleStatus.ARCHIVED
+    if age >= timedelta(days=7):
+        return JobLifecycleStatus.STALE
+    return JobLifecycleStatus.ACTIVE
 
 
 def _to_listing(listing: JobSourceListing) -> DashboardListing:

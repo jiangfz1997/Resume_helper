@@ -271,8 +271,9 @@ until the cron is manually updated.
   coarse-scoring call, no extra Gemini request) but only for jobs that have
   actually been scored — jobs excluded by hard filters, or scored before
   this change shipped, will still show these fields as absent/`[]`.
-- `status` on `JobSourceListing` (`active`/`stale`/`closed`) never
-  transitions automatically — no process currently marks a listing stale
+- Persisted `status` on `JobSourceListing` (`active`/`stale`/`closed`) does not
+  transition automatically. The dashboard now derives a reversible lifecycle
+  from `last_seen_at` (7 days stale, 30 days archived) without deleting data
   after N consecutive misses even though `consecutive_misses` is tracked.
 - No API layer exists between DynamoDB and a dashboard today — a dashboard
   backend would either read DynamoDB directly (same IAM pattern as the

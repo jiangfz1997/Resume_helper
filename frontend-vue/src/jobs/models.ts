@@ -1,6 +1,7 @@
 export type EligibilityStatus = 'eligible' | 'review' | 'excluded'
 export type WorkplaceType = 'remote' | 'hybrid' | 'onsite' | 'unknown'
 export type JobUserStatus = 'new' | 'saved' | 'selected' | 'applied' | 'rejected'
+export type JobLifecycleStatus = 'active' | 'stale' | 'archived'
 
 export interface JobRecord {
   jobId: string
@@ -55,12 +56,30 @@ export interface DashboardJobSummary {
   sources: string[]
   createdAt: string
   updatedAt: string
+  lastSeenAt: string
+  lifecycleStatus: JobLifecycleStatus
 }
 
 export interface DashboardRunSummary {
   runId: string
   discoveredAt: string
   newJobsCount: number
+  observedCount: number
+  eligibleCount: number
+  reviewCount: number
+  excludedCount: number
+  errorCount: number
+  sources: string[]
+  status: string
+}
+
+export interface ScoringQueueSummary {
+  eligibleTotal: number
+  scoredCurrent: number
+  pending: number
+  queued: number
+  failed: number
+  archivedSkipped: number
 }
 
 export interface JobUserState {
@@ -75,6 +94,9 @@ export interface JobUserState {
   scoreVersion: string | null
   profileVersion: number | null
   scoredAt: string | null
+  scoringStatus: string | null
+  scoringProfileVersion: number | null
+  scoreError: string | null
 }
 
 export interface RunUserState {
@@ -122,6 +144,8 @@ export interface JobDataSource {
   listJobs(): Promise<DashboardJobSummary[]>
   getJob(jobId: string): Promise<DashboardJob | null>
   listRuns(): Promise<DashboardRunSummary[]>
+  getScoringQueue(): Promise<ScoringQueueSummary>
+  scoreJob(jobId: string): Promise<void>
   getUserState(): Promise<DashboardUserState>
   markJobViewed(jobId: string): Promise<void>
   setJobStatus(jobId: string, status: JobUserStatus): Promise<void>

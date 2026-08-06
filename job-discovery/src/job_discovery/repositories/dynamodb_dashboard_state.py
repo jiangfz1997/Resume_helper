@@ -13,6 +13,7 @@ from job_discovery.dashboard.models import (
     DashboardJobUserStatus,
     DashboardRunUserState,
     DashboardUserStateSnapshot,
+    DiscoveryRunReport,
 )
 from job_discovery.domain.models import CoarseScore
 from job_discovery.domain.settings import DiscoverySettings, DiscoverySettingsInput, ScoringProfileInput, UserScoringProfile
@@ -158,15 +159,67 @@ class DynamoDBDashboardUserStateRepository(DashboardUserStateRepository):
             UpdateExpression=(
                 "SET entity_type = :type, job_id = :job_id, #status = if_not_exists(#status, :new), "
                 "coarse_score = :score, coarse_score_reasoning = :reasoning, score_model = :model, "
-                "score_version = :version, profile_version = :profile_version, scored_at = :scored_at, updated_at = :scored_at"
+                "score_version = :version, profile_version = :profile_version, scored_at = :scored_at, "
+                "scoring_status = :scored, scoring_profile_version = :profile_version, "
+                "updated_at = :scored_at REMOVE score_error"
             ),
             ExpressionAttributeNames={"#status": "status"},
             ExpressionAttributeValues={
                 ":type": "job", ":job_id": str(job_id), ":new": "new", ":score": score.score,
                 ":reasoning": score.reasoning, ":model": score.model, ":version": score_version,
-                ":profile_version": profile_version, ":scored_at": score.scored_at.isoformat(),
+                ":profile_version": profile_version, ":scored_at": score.scored_at.isoformat(), ":scored": "scored",
             },
         )
+
+    def mark_user_score_queued(self, user_id: str, job_id: UUID, profile_version: int) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._table.update_item(
+            Key={"user_id": user_id, "entity_key": f"JOB#{job_id}"},
+            UpdateExpression=(
+                "SET entity_type = :type, job_id = :job_id, #status = if_not_exists(#status, :new), "
+                "scoring_status = :queued, scoring_profile_version = :profile_version, "
+                "updated_at = :now REMOVE score_error"
+            ),
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":type": "job", ":job_id": str(job_id), ":new": "new", ":queued": "queued",
+                ":profile_version": profile_version, ":now": now,
+            },
+        )
+
+    def record_user_score_failure(
+        self, user_id: str, job_id: UUID, score_version: str, profile_version: int, error: str
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._table.update_item(
+            Key={"user_id": user_id, "entity_key": f"JOB#{job_id}"},
+            UpdateExpression=(
+                "SET entity_type = :type, job_id = :job_id, #status = if_not_exists(#status, :new), "
+                "scoring_status = :failed, score_error = :error, score_version = :version, "
+                "scoring_profile_version = :profile_version, updated_at = :now"
+            ),
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":type": "job", ":job_id": str(job_id), ":new": "new", ":failed": "failed",
+                ":error": error[:500], ":version": score_version, ":profile_version": profile_version, ":now": now,
+            },
+        )
+
+    def record_discovery_run(self, report: DiscoveryRunReport) -> None:
+        self._table.put_item(Item={
+            "user_id": "SYSTEM",
+            "entity_key": f"DISCOVERY_RUN#{report.run_id}#{report.runner}",
+            "entity_type": "discovery_run",
+            **report.model_dump(mode="json"),
+        })
+
+    def list_discovery_runs(self) -> list[DiscoveryRunReport]:
+        items = _paginated(
+            self._table.query,
+            KeyConditionExpression=Key("user_id").eq("SYSTEM") & Key("entity_key").begins_with("DISCOVERY_RUN#"),
+            ConsistentRead=True,
+        )
+        return [DiscoveryRunReport.model_validate(item) for item in items]
 
 
 def _to_job_state(item: dict[str, Any]) -> DashboardJobUserState:
@@ -182,6 +235,11 @@ def _to_job_state(item: dict[str, Any]) -> DashboardJobUserState:
         score_version=item.get("score_version"),
         profile_version=int(item["profile_version"]) if item.get("profile_version") is not None else None,
         scored_at=datetime.fromisoformat(item["scored_at"]) if item.get("scored_at") else None,
+        scoring_status=item.get("scoring_status"),
+        scoring_profile_version=(
+            int(item["scoring_profile_version"]) if item.get("scoring_profile_version") is not None else None
+        ),
+        score_error=item.get("score_error"),
     )
 
 

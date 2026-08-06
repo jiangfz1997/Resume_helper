@@ -35,7 +35,7 @@ def test_invalid_query_returns_400(monkeypatch) -> None:
     module = _load_lambda()
     event = {
         "routeKey": "GET /jobs",
-        "queryStringParameters": {"limit": "500"},
+        "queryStringParameters": {"limit": "501"},
         "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
     }
 
@@ -116,3 +116,44 @@ def test_profile_update_is_scoped_to_authenticated_user(monkeypatch) -> None:
     assert response["statusCode"] == 200
     assert calls[0][0] == "cognito-user-a"
     assert calls[0][1].skills == ["Python"]
+
+
+def test_authenticated_user_can_queue_one_job_for_scoring(monkeypatch) -> None:
+    invocations: list[dict] = []
+
+    class FakeReader:
+        def get_record(self, job_id: UUID) -> object:
+            return object()
+
+    class FakeLambdaClient:
+        def invoke(self, **kwargs: object) -> None:
+            invocations.append(kwargs)
+
+    class FakeStateRepository:
+        def get_scoring_profile(self, user_id: str) -> UserScoringProfile:
+            return UserScoringProfile(
+                user_id=user_id, skills=["Python"], active=True, profile_version=3,
+                updated_at=datetime.now(timezone.utc),
+            )
+
+        def mark_user_score_queued(self, user_id: str, job_id: UUID, profile_version: int) -> None:
+            assert (user_id, profile_version) == ("user-1", 3)
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    monkeypatch.setenv("SCORING_FUNCTION_NAME", "job-discovery-score")
+    module = _load_lambda()
+    module._reader = FakeReader()
+    module._state_repository = FakeStateRepository()
+    module._lambda_client = FakeLambdaClient()
+    job_id = "6e02c6de-1547-4efd-b54a-b531058d9d87"
+    event = {
+        "routeKey": "POST /jobs/{job_id}/score",
+        "pathParameters": {"job_id": job_id},
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
+    }
+
+    response = module.lambda_handler(event, None)
+    payload = json.loads(invocations[0]["Payload"].decode("utf-8"))
+
+    assert response["statusCode"] == 202
+    assert payload == {"user_ids": ["user-1"], "job_ids": [job_id], "limit": 1}
