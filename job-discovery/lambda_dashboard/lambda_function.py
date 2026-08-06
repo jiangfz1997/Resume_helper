@@ -6,11 +6,12 @@ import os
 from typing import Any
 from uuid import UUID
 
+import boto3
 from pydantic import ValidationError
 
 from job_discovery.dashboard.interfaces import DashboardJobReader, DashboardUserStateRepository
 from job_discovery.dashboard.models import DashboardJobQuery, UpdateJobStateRequest
-from job_discovery.dashboard.service import get_dashboard_job, list_dashboard_jobs, list_dashboard_runs
+from job_discovery.dashboard.service import get_dashboard_job, get_scoring_queue, list_dashboard_jobs, list_dashboard_runs
 from job_discovery.domain.settings import DiscoverySettingsInput, ScoringProfileInput
 from job_discovery.repositories.dynamodb_dashboard import DynamoDBDashboardJobReader
 from job_discovery.repositories.dynamodb_dashboard_state import DynamoDBDashboardUserStateRepository
@@ -20,6 +21,7 @@ log.setLevel(logging.INFO)
 
 _reader: DashboardJobReader | None = None
 _state_repository: DashboardUserStateRepository | None = None
+_lambda_client: Any = None
 
 
 def _get_reader() -> DashboardJobReader:
@@ -58,7 +60,29 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 return _response(404, {"detail": "job not found"})
             return _response(200, job.model_dump(mode="json"))
         if route_key == "GET /runs":
-            return _response(200, list_dashboard_runs(_get_reader()).model_dump(mode="json"))
+            reports = _get_state_repository().list_discovery_runs()
+            return _response(200, list_dashboard_runs(_get_reader(), reports).model_dump(mode="json"))
+        if route_key == "GET /scoring/queue":
+            state = _get_state_repository().get_snapshot(user_id)
+            profile = _get_state_repository().get_scoring_profile(user_id)
+            queue = get_scoring_queue(_get_reader(), state.jobs, profile.profile_version if profile else None)
+            return _response(200, queue.model_dump(mode="json"))
+        if route_key == "POST /jobs/{job_id}/score":
+            job_id = UUID((event.get("pathParameters") or {}).get("job_id", ""))
+            if _get_reader().get_record(job_id) is None:
+                return _response(404, {"detail": "job not found"})
+            profile = _get_state_repository().get_scoring_profile(user_id)
+            if profile is None or not profile.active:
+                return _response(409, {"detail": "an active scoring profile is required"})
+            _get_state_repository().mark_user_score_queued(user_id, job_id, profile.profile_version)
+            try:
+                _invoke_scoring(user_id, job_id)
+            except Exception as exc:
+                _get_state_repository().record_user_score_failure(
+                    user_id, job_id, "manual-invoke", profile.profile_version, str(exc)
+                )
+                raise
+            return _response(202, {"ok": True, "status": "queued"})
         if route_key == "GET /user-state":
             return _response(200, _get_state_repository().get_snapshot(user_id).model_dump(mode="json"))
         if route_key == "PUT /jobs/{job_id}/viewed":
@@ -112,6 +136,17 @@ def _claims(event: dict[str, Any]) -> dict[str, Any]:
         .get("authorizer", {})
         .get("jwt", {})
         .get("claims", {})
+    )
+
+
+def _invoke_scoring(user_id: str, job_id: UUID) -> None:
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client("lambda")
+    _lambda_client.invoke(
+        FunctionName=os.environ["SCORING_FUNCTION_NAME"],
+        InvocationType="Event",
+        Payload=json.dumps({"user_ids": [user_id], "job_ids": [str(job_id)], "limit": 1}).encode("utf-8"),
     )
 
 

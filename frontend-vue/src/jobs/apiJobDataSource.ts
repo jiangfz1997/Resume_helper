@@ -9,6 +9,7 @@ import type {
   JobListing,
   JobUserStatus,
   ScoringProfileSettings,
+  ScoringQueueSummary,
   WorkplaceType,
 } from './models'
 
@@ -30,6 +31,8 @@ interface ApiJobSummary {
   sources: string[]
   created_at: string
   updated_at: string
+  last_seen_at: string
+  lifecycle_status: 'active' | 'stale' | 'archived'
 }
 
 interface ApiListing {
@@ -61,7 +64,11 @@ interface ApiJobPage {
 }
 
 interface ApiRunPage {
-  items: Array<{ run_id: string; discovered_at: string; new_jobs_count: number }>
+  items: Array<{
+    run_id: string; discovered_at: string; new_jobs_count: number; observed_count: number
+    eligible_count: number; review_count: number; excluded_count: number; error_count: number
+    sources: string[]; status: string
+  }>
 }
 
 interface ApiUserState {
@@ -77,6 +84,9 @@ interface ApiUserState {
     score_version: string | null
     profile_version: number | null
     scored_at: string | null
+    scoring_status: string | null
+    scoring_profile_version: number | null
+    score_error: string | null
   }>
   runs: Array<{ run_id: string; viewed_at: string }>
 }
@@ -85,7 +95,7 @@ export class ApiJobDataSource implements JobDataSource {
   constructor(private readonly baseUrl: string, private readonly tokenProvider: () => string | null) {}
 
   async listJobs(): Promise<DashboardJobSummary[]> {
-    const page = await this.request<ApiJobPage>('/jobs?limit=100')
+    const page = await this.request<ApiJobPage>('/jobs?limit=500')
     return page.items.map(toSummary)
   }
 
@@ -105,7 +115,32 @@ export class ApiJobDataSource implements JobDataSource {
       runId: run.run_id,
       discoveredAt: run.discovered_at,
       newJobsCount: run.new_jobs_count,
+      observedCount: run.observed_count,
+      eligibleCount: run.eligible_count,
+      reviewCount: run.review_count,
+      excludedCount: run.excluded_count,
+      errorCount: run.error_count,
+      sources: run.sources,
+      status: run.status,
     }))
+  }
+
+  async getScoringQueue(): Promise<ScoringQueueSummary> {
+    const queue = await this.request<{
+      eligible_total: number; scored_current: number; pending: number; queued: number; failed: number; archived_skipped: number
+    }>('/scoring/queue')
+    return {
+      eligibleTotal: queue.eligible_total,
+      scoredCurrent: queue.scored_current,
+      pending: queue.pending,
+      queued: queue.queued,
+      failed: queue.failed,
+      archivedSkipped: queue.archived_skipped,
+    }
+  }
+
+  async scoreJob(jobId: string): Promise<void> {
+    await this.request(`/jobs/${encodeURIComponent(jobId)}/score`, { method: 'POST' })
   }
 
   async getUserState(): Promise<DashboardUserState> {
@@ -123,6 +158,9 @@ export class ApiJobDataSource implements JobDataSource {
         scoreVersion: job.score_version,
         profileVersion: job.profile_version,
         scoredAt: job.scored_at,
+        scoringStatus: job.scoring_status,
+        scoringProfileVersion: job.scoring_profile_version,
+        scoreError: job.score_error,
       })),
       runs: state.runs.map((run) => ({ runId: run.run_id, viewedAt: run.viewed_at })),
     }
@@ -272,6 +310,8 @@ function toSummary(job: ApiJobSummary): DashboardJobSummary {
     sources: job.sources,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
+    lastSeenAt: job.last_seen_at,
+    lifecycleStatus: job.lifecycle_status,
   }
 }
 

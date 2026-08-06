@@ -128,6 +128,7 @@ Resources:
           - Content-Type
         AllowMethods:
           - GET
+          - POST
           - PUT
         MaxAge: 600
       DefaultRouteSettings:
@@ -163,6 +164,7 @@ Resources:
           USER_DATA_TABLE: !Ref DashboardUserDataTable
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           REQUIRE_AUTH: 'true'
+          SCORING_FUNCTION_NAME: !Ref PersonalizedScoringFunction
       Policies:
         - Statement:
             - Sid: ReadDashboardTables
@@ -182,6 +184,11 @@ Resources:
                 - dynamodb:Query
                 - dynamodb:UpdateItem
               Resource: !GetAtt DashboardUserDataTable.Arn
+            - Sid: InvokePersonalizedScoring
+              Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt PersonalizedScoringFunction.Arn
       Events:
         ListJobs:
           Type: HttpApi
@@ -201,6 +208,18 @@ Resources:
             ApiId: !Ref DashboardApi
             Method: GET
             Path: /runs
+        GetScoringQueue:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /scoring/queue
+        ScoreJobNow:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: POST
+            Path: /jobs/{job_id}/score
         GetUserState:
           Type: HttpApi
           Properties:
@@ -296,7 +315,7 @@ Resources:
           Properties:
             ScheduleExpression: cron(45 12,17,23 * * ? *)
             ScheduleExpressionTimezone: UTC
-            Input: '{"limit":8}'
+            Input: '{"limit":20}'
 
 Outputs:
   ApiUrl:

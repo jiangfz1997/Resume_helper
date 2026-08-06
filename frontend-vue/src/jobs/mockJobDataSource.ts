@@ -13,6 +13,7 @@ import type {
   JobRecord,
   JobUserStatus,
   ScoringProfileSettings,
+  ScoringQueueSummary,
   WorkplaceType,
 } from './models'
 
@@ -102,12 +103,16 @@ export class MockJobDataSource implements JobDataSource {
 
     this.jobs = parseCsv(recordsCsv).map(toRecord).map((record) => {
       const jobListings = listingsByJob.get(record.jobId) ?? []
+      const seenDates = jobListings.map((listing) => listing.lastSeenAt).sort()
+      const lastSeenAt = seenDates[seenDates.length - 1] ?? record.updatedAt
       return {
         ...record,
         firstDiscoveredRunId: legacyRunId(record.createdAt),
         postedAt: selectPrimaryListing(jobListings)?.postedAt ?? null,
         firstSeenAt: jobListings.map((listing) => listing.firstSeenAt).sort()[0] ?? record.createdAt,
         sources: [...new Set(jobListings.map((listing) => listing.source))].sort(),
+        lastSeenAt,
+        lifecycleStatus: lifecycleStatus(lastSeenAt),
         listings: jobListings,
         primaryListing: selectPrimaryListing(jobListings),
       }
@@ -129,7 +134,29 @@ export class MockJobDataSource implements JobDataSource {
       runId,
       discoveredAt: jobs.map((job) => job.createdAt).sort()[0],
       newJobsCount: jobs.length,
+      observedCount: jobs.length,
+      eligibleCount: jobs.filter((job) => job.eligibilityStatus === 'eligible').length,
+      reviewCount: jobs.filter((job) => job.eligibilityStatus === 'review').length,
+      excludedCount: jobs.filter((job) => job.eligibilityStatus === 'excluded').length,
+      errorCount: 0,
+      sources: [...new Set(jobs.flatMap((job) => job.sources))],
+      status: 'unknown',
     })).sort((left, right) => Date.parse(right.discoveredAt) - Date.parse(left.discoveredAt))
+  }
+
+  async getScoringQueue(): Promise<ScoringQueueSummary> {
+    return {
+      eligibleTotal: this.jobs.filter((job) => job.eligibilityStatus === 'eligible').length,
+      scoredCurrent: this.jobs.filter((job) => job.coarseScore !== null).length,
+      pending: this.jobs.filter((job) => job.eligibilityStatus === 'eligible' && job.coarseScore === null).length,
+      queued: 0,
+      failed: 0,
+      archivedSkipped: 0,
+    }
+  }
+
+  async scoreJob(jobId: string): Promise<void> {
+    void jobId
   }
 
   async getUserState(): Promise<DashboardUserState> {
@@ -152,6 +179,9 @@ export class MockJobDataSource implements JobDataSource {
       scoreVersion: existing?.scoreVersion ?? null,
       profileVersion: existing?.profileVersion ?? null,
       scoredAt: existing?.scoredAt ?? null,
+      scoringStatus: existing?.scoringStatus ?? null,
+      scoringProfileVersion: existing?.scoringProfileVersion ?? null,
+      scoreError: existing?.scoreError ?? null,
     }]
     saveMockState(state)
   }
@@ -201,6 +231,11 @@ function legacyRunId(createdAt: string): string {
   return `legacy-${date.toISOString().replace('.000Z', 'Z')}`
 }
 
+function lifecycleStatus(lastSeenAt: string): 'active' | 'stale' | 'archived' {
+  const ageDays = (Date.now() - Date.parse(lastSeenAt)) / 86_400_000
+  return ageDays >= 30 ? 'archived' : ageDays >= 7 ? 'stale' : 'active'
+}
+
 function loadMockState(): DashboardUserState {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(MOCK_STATE_KEY) ?? '{}')
@@ -216,6 +251,9 @@ function loadMockState(): DashboardUserState {
           scoreVersion: job.scoreVersion ?? null,
           profileVersion: job.profileVersion ?? null,
           scoredAt: job.scoredAt ?? null,
+          scoringStatus: job.scoringStatus ?? null,
+          scoringProfileVersion: job.scoringProfileVersion ?? null,
+          scoreError: job.scoreError ?? null,
         })),
       }
     }

@@ -55,6 +55,8 @@ the user ID; the browser never supplies an arbitrary user ID.
 - `GET/PUT /profile/scoring`: current user's profile.
 - `GET/PUT /settings/discovery`: shared discovery settings.
 - `GET /user-state`: current user's scores, views, run views, and statuses.
+- `GET /scoring/queue`: current user's scored and pending counts.
+- `POST /jobs/{job_id}/score`: queues one job for the authenticated user.
 - Existing `/jobs` and `/runs` routes return shared discovery data.
 
 The Vue `Job Settings` page makes the ownership boundary explicit. Both users
@@ -66,7 +68,7 @@ untrusted users.
 
 The existing crawlers run at 12:00, 17:00, and 23:00 UTC. The SAM stack creates
 the scoring schedule at 12:45, 17:45, and 23:45 UTC. Each scoring invocation
-loads at most eight eligible jobs and evaluates them for every active profile.
+loads at most 20 eligible jobs and evaluates them for every active profile.
 This conservative batch size leaves retry headroom inside Lambda's 15-minute
 maximum. Repeated runs skip unchanged `(user, job, profile, prompt)` versions.
 
@@ -81,10 +83,16 @@ For the crawler Lambdas to read dashboard-managed shared settings, set:
 USER_DATA_TABLE=job-discovery-user-data
 ```
 
-Their execution roles also need `dynamodb:GetItem` on that table. Until this is
+Their execution roles also need `dynamodb:GetItem` and `dynamodb:PutItem` on
+that table. `GetItem` loads shared settings; `PutItem` writes one compact
+source-health report per run. Until this is
 configured, crawler event payload/default settings remain the compatibility
 fallback. Gemini environment variables are no longer needed on crawler
 functions.
+
+The dashboard derives lifecycle from the newest listing `last_seen_at`: less
+than 7 days is active, 7-29 days is stale, and 30 days or more is archived.
+This is a reversible display state; no DynamoDB job is deleted.
 
 The direct Lambda code-deployment workflow additionally requires GitHub
 variable `SCORING_FUNCTION_NAME=job-discovery-score`. Run the dashboard SAM

@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
-from job_discovery.dashboard.models import DashboardJobUserStatus, DashboardUserStateSnapshot
+from job_discovery.dashboard.models import (
+    DashboardJobUserStatus,
+    DashboardUserStateSnapshot,
+    DiscoveryRunReport,
+)
 from job_discovery.domain.models import CoarseScore, JobRecord, JobSourceListing
 from job_discovery.domain.settings import DiscoverySettings, DiscoverySettingsInput, ScoringProfileInput, UserScoringProfile
 
@@ -40,3 +44,13 @@ class DashboardUserStateRepository(Protocol):
     def record_user_score(
         self, user_id: str, job_id: UUID, score: CoarseScore, score_version: str, profile_version: int
     ) -> None: ...
+
+    def mark_user_score_queued(self, user_id: str, job_id: UUID, profile_version: int) -> None: ...
+
+    def record_user_score_failure(
+        self, user_id: str, job_id: UUID, score_version: str, profile_version: int, error: str
+    ) -> None: ...
+
+    def record_discovery_run(self, report: DiscoveryRunReport) -> None: ...
+
+    def list_discovery_runs(self) -> list[DiscoveryRunReport]: ...

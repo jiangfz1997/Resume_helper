@@ -1,6 +1,11 @@
 # Dashboard read API
 
-This stack exposes the existing job records and listings through an authenticated, read-only HTTP API. It does not create or modify the crawler tables.
+This stack exposes the existing job records and listings through an authenticated HTTP API. It does not create or modify the crawler tables.
+
+Operational routes include `GET /runs` for per-source run health,
+`GET /scoring/queue` for the authenticated user's queue, and
+`POST /jobs/{job_id}/score` to asynchronously score one selected job. Job
+responses include the derived `active`, `stale`, or `archived` lifecycle state.
 
 ## Build
 

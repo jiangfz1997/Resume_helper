@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from job_discovery.dashboard.models import DashboardJobQuery
-from job_discovery.dashboard.service import get_dashboard_job, list_dashboard_jobs, list_dashboard_runs
+from job_discovery.dashboard.models import (
+    DashboardJobQuery,
+    DashboardJobUserState,
+    DiscoveryRunReport,
+    JobLifecycleStatus,
+)
+from job_discovery.dashboard.service import get_dashboard_job, get_scoring_queue, list_dashboard_jobs, list_dashboard_runs
 from job_discovery.domain.models import (
     EligibilityStatus,
     JobRecord,
@@ -130,3 +135,45 @@ def test_runs_group_jobs_by_first_discovery_run_with_legacy_fallback() -> None:
 
     assert [run.run_id for run in page.items] == ["lambda-2026-08-05T12:00Z", "legacy-2026-08-04T17:00Z"]
     assert page.items[0].new_jobs_count == 2
+
+
+def test_run_reports_add_health_counts() -> None:
+    record = _record("Backend Engineer", 8)
+    record.first_discovered_run_id = "run-1"
+    reader = FakeDashboardReader([record], [])
+    report = DiscoveryRunReport(
+        run_id="run-1", runner="jobspy", started_at=NOW, completed_at=NOW,
+        sources=["indeed", "linkedin"], observed_count=10, new_jobs_count=3,
+        eligible_count=6, review_count=2, excluded_count=2, error_count=1,
+    )
+
+    run = list_dashboard_runs(reader, [report]).items[0]
+
+    assert run.new_jobs_count == 3
+    assert run.observed_count == 10
+    assert run.status == "partial"
+    assert run.sources == ["indeed", "linkedin"]
+
+
+def test_archived_jobs_are_excluded_from_scoring_queue() -> None:
+    active = _record("Active Engineer", None)
+    archived = _record("Old Engineer", None)
+    active_listing = _listing(active, SourceName.INDEED)
+    active_listing.last_seen_at = datetime.now(timezone.utc)
+    archived_listing = _listing(archived, SourceName.WORKDAY)
+    archived_listing.last_seen_at = datetime.now(timezone.utc) - timedelta(days=31)
+    state = DashboardJobUserState(
+        job_id=active.job_id, coarse_score=8, profile_version=2,
+        updated_at=datetime.now(timezone.utc),
+    )
+    reader = FakeDashboardReader([active, archived], [active_listing, archived_listing])
+
+    page = list_dashboard_jobs(reader, DashboardJobQuery())
+    queue = get_scoring_queue(reader, [state], profile_version=2)
+
+    assert next(job for job in page.items if job.job_id == archived.job_id).lifecycle_status is JobLifecycleStatus.ARCHIVED
+    assert queue.scored_current == 1
+    assert queue.pending == 0
+    assert queue.queued == 0
+    assert queue.failed == 0
+    assert queue.archived_skipped == 1
