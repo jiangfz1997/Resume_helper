@@ -1,0 +1,157 @@
+name: Deploy job discovery Lambdas
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "job-discovery/src/**"
+      - "job-discovery/lambda_workday/**"
+      - "job-discovery/lambda_jobspy/**"
+      - "job-discovery/lambda_dashboard/**"
+      - "job-discovery/pyproject.toml"
+      - "job-discovery/requirements-*.txt"
+      - ".github/workflows/deploy-job-discovery-lambdas.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: job-discovery-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
+      WORKDAY_FUNCTION_NAME: ${{ vars.WORKDAY_FUNCTION_NAME }}
+      JOBSPY_FUNCTION_NAME: ${{ vars.JOBSPY_FUNCTION_NAME }}
+      DASHBOARD_FUNCTION_NAME: ${{ vars.DASHBOARD_FUNCTION_NAME }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            job-discovery/pyproject.toml
+            job-discovery/requirements-tierb.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./job-discovery[dev]"
+
+      - name: Run tests
+        run: python -m pytest job-discovery/tests
+
+      - name: Build production Lambda packages
+        run: |
+          python job-discovery/lambda_workday/build.py
+          python job-discovery/lambda_jobspy/build.py
+          python job-discovery/lambda_dashboard/build.py
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          required=(
+            AWS_DEPLOY_ROLE_ARN
+            AWS_REGION
+            LAMBDA_ARTIFACT_BUCKET
+            WORKDAY_FUNCTION_NAME
+            JOBSPY_FUNCTION_NAME
+            DASHBOARD_FUNCTION_NAME
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing GitHub Actions variable: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload immutable Lambda packages
+        shell: bash
+        run: |
+          release_prefix="job-discovery/${GITHUB_SHA}"
+          echo "RELEASE_PREFIX=${release_prefix}" >> "$GITHUB_ENV"
+          aws s3 cp job-discovery/lambda_workday/dist/lambda-workday.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-workday.zip" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+          aws s3 cp job-discovery/lambda_jobspy/dist/lambda-jobspy.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-jobspy.zip" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+          aws s3 cp job-discovery/lambda_dashboard/dist/lambda-dashboard.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-dashboard.zip" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+
+      - name: Update Lambda function code
+        shell: bash
+        run: |
+          validate_update() {
+            local function_name="$1"
+            local package_name="$2"
+            aws lambda update-function-code \
+              --function-name "$function_name" \
+              --s3-bucket "$LAMBDA_ARTIFACT_BUCKET" \
+              --s3-key "${RELEASE_PREFIX}/${package_name}" \
+              --dry-run >/dev/null
+          }
+
+          deploy_function() {
+            local function_name="$1"
+            local package_name="$2"
+            local s3_key="${RELEASE_PREFIX}/${package_name}"
+
+            aws lambda update-function-code \
+              --function-name "$function_name" \
+              --s3-bucket "$LAMBDA_ARTIFACT_BUCKET" \
+              --s3-key "$s3_key" \
+              --publish \
+              --query '{FunctionName:FunctionName,Version:Version,CodeSha256:CodeSha256}'
+
+            aws lambda wait function-updated-v2 --function-name "$function_name"
+            status=$(aws lambda get-function-configuration \
+              --function-name "$function_name" \
+              --query LastUpdateStatus \
+              --output text)
+            if [[ "$status" != "Successful" ]]; then
+              echo "Lambda update failed for ${function_name}: ${status}" >&2
+              exit 1
+            fi
+          }
+
+          validate_update "$WORKDAY_FUNCTION_NAME" lambda-workday.zip
+          validate_update "$JOBSPY_FUNCTION_NAME" lambda-jobspy.zip
+          validate_update "$DASHBOARD_FUNCTION_NAME" lambda-dashboard.zip
+
+          deploy_function "$WORKDAY_FUNCTION_NAME" lambda-workday.zip
+          deploy_function "$JOBSPY_FUNCTION_NAME" lambda-jobspy.zip
+          deploy_function "$DASHBOARD_FUNCTION_NAME" lambda-dashboard.zip
+
+      - name: Write deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## Job discovery Lambda deployment"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Artifact prefix: \`s3://${LAMBDA_ARTIFACT_BUCKET}/${RELEASE_PREFIX}/\`"
+            echo "- Workday: \`${WORKDAY_FUNCTION_NAME}\`"
+            echo "- JobSpy: \`${JOBSPY_FUNCTION_NAME}\`"
+            echo "- Dashboard: \`${DASHBOARD_FUNCTION_NAME}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

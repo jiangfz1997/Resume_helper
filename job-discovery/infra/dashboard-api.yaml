@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
+Transform:
+  - AWS::LanguageExtensions
+  - AWS::Serverless-2016-10-31
 Description: Read-only authenticated API for the job discovery dashboard
 
 Parameters:
@@ -21,6 +23,12 @@ Parameters:
   CognitoDomainPrefix:
     Type: String
     Description: Globally unique prefix for the Cognito managed login domain
+  LambdaArtifactBucket:
+    Type: String
+    Description: S3 bucket containing the dashboard Lambda deployment package
+  DashboardLambdaCodeKey:
+    Type: String
+    Description: Immutable S3 key for the dashboard Lambda deployment package
 
 Resources:
   DashboardUserPool:
@@ -106,7 +114,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: job-dashboard-read
-      CodeUri: s3://job-dashboard-artifacts-492832370104-us-east-1-an/lambda-dashboard.zip
+      CodeUri:
+        Bucket: !Ref LambdaArtifactBucket
+        Key: !Ref DashboardLambdaCodeKey
       Handler: lambda_function.lambda_handler
       Runtime: python3.13
       Architectures:

@@ -1,0 +1,77 @@
+name: Job discovery CI
+
+on:
+  pull_request:
+    paths:
+      - "job-discovery/**"
+      - ".github/workflows/job-discovery-ci.yml"
+      - ".github/workflows/deploy-job-discovery-lambdas.yml"
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - "job-discovery/**"
+      - ".github/workflows/job-discovery-ci.yml"
+      - ".github/workflows/deploy-job-discovery-lambdas.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-discovery-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            job-discovery/pyproject.toml
+            job-discovery/requirements-tierb.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./job-discovery[dev]"
+
+      - name: Run tests
+        run: python -m pytest job-discovery/tests
+
+      - name: Build production Lambda packages
+        run: |
+          python job-discovery/lambda_workday/build.py
+          python job-discovery/lambda_jobspy/build.py
+          python job-discovery/lambda_dashboard/build.py
+
+      - name: Validate Lambda packages
+        shell: bash
+        run: |
+          packages=(
+            job-discovery/lambda_workday/dist/lambda-workday.zip
+            job-discovery/lambda_jobspy/dist/lambda-jobspy.zip
+            job-discovery/lambda_dashboard/dist/lambda-dashboard.zip
+          )
+          for package in "${packages[@]}"; do
+            test -s "$package"
+            unzip -t "$package" >/dev/null
+          done
+
+      - name: Preserve packages for inspection
+        uses: actions/upload-artifact@v6
+        with:
+          name: job-discovery-lambdas-${{ github.sha }}
+          path: |
+            job-discovery/lambda_workday/dist/lambda-workday.zip
+            job-discovery/lambda_jobspy/dist/lambda-jobspy.zip
+            job-discovery/lambda_dashboard/dist/lambda-dashboard.zip
+          if-no-files-found: error
+          retention-days: 7

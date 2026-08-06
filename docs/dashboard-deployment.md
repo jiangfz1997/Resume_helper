@@ -10,6 +10,7 @@ repository, and add these repository or environment variables:
 
 - `AWS_DEPLOY_ROLE_ARN`
 - `AWS_REGION`
+- `LAMBDA_ARTIFACT_BUCKET`
 - `DASHBOARD_STACK_NAME`
 - `DASHBOARD_WEB_BUCKET`
 - `CLOUDFRONT_DISTRIBUTION_ID`
@@ -27,3 +28,7 @@ Run the workflow manually from the GitHub Actions page. Configure a required
 reviewer on the `production` environment if an approval gate is desired. After
 the deployment has been verified, a later change can enable deployment on
 merges to `main`.
+
+Lambda-only code changes are deployed separately by
+`.github/workflows/deploy-job-discovery-lambdas.yml`. See
+`docs/job-discovery-cicd.md` for triggers, permissions, and rollback details.
