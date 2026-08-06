@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from job_discovery.application.ingest import ingest_observation
+from job_discovery.dashboard.models import DiscoveryRunReport
 from job_discovery.domain.filters import FilterConfig
 from job_discovery.domain.models import JobQuery, SearchQuery, SourceName
 from job_discovery.domain.settings import DiscoverySettings
@@ -146,6 +147,22 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
         if status in this_run_counts:
             this_run_counts[status] += 1
 
+    completed_at = datetime.now(timezone.utc)
+    report = DiscoveryRunReport(
+        run_id=run_id,
+        runner="workday",
+        started_at=started_at,
+        completed_at=completed_at,
+        sources=["workday"],
+        observed_count=sum(1 for item in listings if item.get("job_id")),
+        new_jobs_count=sum(1 for item in listings if item.get("upsert_status") == "job_created"),
+        eligible_count=this_run_counts["eligible"],
+        review_count=this_run_counts["review"],
+        excluded_count=this_run_counts["excluded"],
+        error_count=sum(1 for item in listings if item.get("error")),
+    )
+    run_report_persisted = _record_run_report(report)
+
     response = {
         "run_id": run_id,
         "repository_backend": repository_backend,
@@ -157,6 +174,7 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
         "total_jobs_in_repository": len(all_records),
         "listings": listings,
         "scoring": "handled by job-discovery-score",
+        "run_report_persisted": run_report_persisted,
     }
 
     log.info(
@@ -178,6 +196,18 @@ def _load_settings(event: dict[str, Any]) -> DiscoverySettings:
         accepted_locations=event.get("accepted_locations", ["Toronto"]),
         include_title_keywords=event.get("include_title_keywords", FilterConfig(filter_version="v1").include_title_keywords),
     )
+
+
+def _record_run_report(report: DiscoveryRunReport) -> bool:
+    table_name = os.environ.get("USER_DATA_TABLE")
+    if not table_name:
+        return False
+    try:
+        DynamoDBDashboardUserStateRepository(table_name).record_discovery_run(report)
+        return True
+    except Exception:
+        log.exception("failed to persist discovery run report")
+        return False
 
 
 if __name__ == "__main__":

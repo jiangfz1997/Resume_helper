@@ -91,7 +91,8 @@ jobs:
             --template-file job-discovery/infra/dashboard-api.yaml \
             --stack-name "$STACK_NAME" \
             --region "$AWS_REGION" \
-            --resolve-s3 \
+            --s3-bucket "$LAMBDA_ARTIFACT_BUCKET" \
+            --s3-prefix "job-discovery/sam" \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \

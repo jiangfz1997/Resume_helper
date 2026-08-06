@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timezone
+from uuid import UUID
 
 from job_discovery.dashboard.interfaces import DashboardUserStateRepository
 from job_discovery.dashboard.models import DashboardJobUserStatus
@@ -17,10 +18,17 @@ def score_jobs_for_users(
     scorer: CoarseScorer,
     prompt_version: str,
     limit: int = 100,
+    user_ids: set[str] | None = None,
+    job_ids: set[UUID] | None = None,
 ) -> tuple[int, int]:
     jobs = repository.query(JobQuery(eligibility_status=EligibilityStatus.ELIGIBLE, limit=1000))
+    if job_ids is not None:
+        jobs = [job for job in jobs if job.job_id in job_ids]
     jobs.sort(key=_created_timestamp, reverse=True)
-    profiles = [profile for profile in user_data.list_scoring_profiles() if profile.active]
+    profiles = [
+        profile for profile in user_data.list_scoring_profiles()
+        if profile.active and (user_ids is None or profile.user_id in user_ids)
+    ]
     snapshots = {profile.user_id: user_data.get_snapshot(profile.user_id) for profile in profiles}
     existing = {
         (profile.user_id, state.job_id, state.profile_version, state.score_version)
@@ -54,6 +62,9 @@ def score_jobs_for_users(
                 scored += 1
             except Exception as exc:
                 errors += 1
+                user_data.record_user_score_failure(
+                    profile.user_id, job.job_id, score_version, profile.profile_version, str(exc)
+                )
                 log.warning("personalized scoring failed for user %s job %s: %s", profile.user_id, job.job_id, exc)
     return scored, errors
 

@@ -22,7 +22,13 @@ class DashboardJobQuery(BaseModel):
     min_score: int | None = Field(default=None, ge=1, le=10)
     source: SourceName | None = None
     job_category: JobCategory | None = None
-    limit: int = Field(default=50, ge=1, le=100)
+    limit: int = Field(default=50, ge=1, le=500)
+
+
+class JobLifecycleStatus(str, Enum):
+    ACTIVE = "active"
+    STALE = "stale"
+    ARCHIVED = "archived"
 
 
 class DashboardListing(BaseModel):
@@ -59,6 +65,8 @@ class DashboardJobSummary(BaseModel):
     sources: list[SourceName] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    last_seen_at: datetime
+    lifecycle_status: JobLifecycleStatus
 
 
 class DashboardJobDetail(DashboardJobSummary):
@@ -89,6 +97,36 @@ class DashboardRunSummary(BaseModel):
     run_id: str
     discovered_at: datetime
     new_jobs_count: int
+    observed_count: int = 0
+    eligible_count: int = 0
+    review_count: int = 0
+    excluded_count: int = 0
+    error_count: int = 0
+    sources: list[str] = Field(default_factory=list)
+    status: str = "unknown"
+
+
+class DiscoveryRunReport(BaseModel):
+    run_id: str
+    runner: str
+    started_at: datetime
+    completed_at: datetime
+    sources: list[str] = Field(default_factory=list)
+    observed_count: int = 0
+    new_jobs_count: int = 0
+    eligible_count: int = 0
+    review_count: int = 0
+    excluded_count: int = 0
+    error_count: int = 0
+
+
+class DashboardScoringQueue(BaseModel):
+    eligible_total: int
+    scored_current: int
+    pending: int
+    queued: int
+    failed: int
+    archived_skipped: int
 
 
 class DashboardRunPage(BaseModel):
@@ -107,6 +145,9 @@ class DashboardJobUserState(BaseModel):
     score_version: str | None = None
     profile_version: int | None = None
     scored_at: datetime | None = None
+    scoring_status: str | None = None
+    scoring_profile_version: int | None = None
+    score_error: str | None = None
 
 
 class DashboardRunUserState(BaseModel):

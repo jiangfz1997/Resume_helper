@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from typing import Any
+from uuid import UUID
 
 from job_discovery.application.personalized_score import score_jobs_for_users
 from job_discovery.repositories.dynamodb_dashboard_state import DynamoDBDashboardUserStateRepository
@@ -27,7 +28,13 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
 
     scorer = GeminiCoarseScorer()
     scored, errors = score_jobs_for_users(
-        repository, user_data, scorer, prompt_version=PROMPT_VERSION, limit=int(event.get("limit", 100))
+        repository,
+        user_data,
+        scorer,
+        prompt_version=PROMPT_VERSION,
+        limit=int(event.get("limit", 100)),
+        user_ids=set(event["user_ids"]) if event.get("user_ids") else None,
+        job_ids={UUID(value) for value in event["job_ids"]} if event.get("job_ids") else None,
     )
     response = {
         "repository_backend": repository_backend,

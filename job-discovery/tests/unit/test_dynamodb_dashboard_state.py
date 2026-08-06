@@ -6,7 +6,7 @@ from uuid import uuid4
 import boto3
 from moto import mock_aws
 
-from job_discovery.dashboard.models import DashboardJobUserStatus
+from job_discovery.dashboard.models import DashboardJobUserStatus, DiscoveryRunReport
 from job_discovery.domain.models import CoarseScore
 from job_discovery.domain.settings import DiscoverySettingsInput, ScoringProfileInput
 from job_discovery.repositories.dynamodb_dashboard_state import DynamoDBDashboardUserStateRepository
@@ -87,3 +87,10 @@ def test_profiles_scores_and_shared_discovery_settings_are_isolated_correctly() 
     )
     assert settings.config_version == 1
     assert repository.get_discovery_settings().search_terms == ["Software Engineer", "SDET"]
+
+    report = DiscoveryRunReport(
+        run_id="run-1", runner="workday", started_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc), sources=["workday"], observed_count=4,
+    )
+    repository.record_discovery_run(report)
+    assert repository.list_discovery_runs() == [report]
