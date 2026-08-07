@@ -28,16 +28,23 @@ API Gateway, Cognito, IAM, S3, CloudFront, EventBridge Scheduler, and DynamoDB p
 stack and deployment workflow. DynamoDB is required because the stack creates
 the retained user-data table and the scheduled personalized-scoring worker.
 
-Run the workflow manually from the GitHub Actions page. Configure a required
-reviewer on the `production` environment if an approval gate is desired. After
-the deployment has been verified, a later change can enable deployment on
-merges to `main`.
+The workflow runs automatically after relevant infrastructure or frontend
+changes reach `main`, and it can also be dispatched manually from GitHub
+Actions. Pull requests only run validation and never update AWS. Configure a
+required reviewer on the `production` environment if an approval gate is
+desired.
 
 The first deployment after this change creates the
 `job-discovery-user-data` DynamoDB table, the `job-discovery-score` Lambda, and
 authenticated profile/settings routes. CloudFormation retains the table if the
 stack is deleted or replaced. No new GitHub variable is required because the
 Lambdas receive the generated table name through `USER_DATA_TABLE`.
+
+The stack also owns the Workday and JobSpy EventBridge Scheduler resources. It
+uses the existing `WORKDAY_FUNCTION_NAME` and `JOBSPY_FUNCTION_NAME` repository
+variables, so no additional GitHub configuration is required. Disable the old
+console-created crawler schedules before the first deployment to prevent
+duplicate invocations.
 
 See `docs/job-discovery-multi-user.md` for the shared-crawl/personal-score model
 and the one-time crawler IAM/environment change.

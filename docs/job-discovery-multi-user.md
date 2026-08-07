@@ -5,7 +5,7 @@
 The production design separates shared market data from personal decisions:
 
 ```text
-EventBridge (3x/day)
+EventBridge Scheduler (10:00, 14:00, and 20:00 America/Toronto)
   -> Workday Lambda + JobSpy Lambda
   -> one shared normalized/deduplicated job collection
   -> job-discovery-records + job-discovery-listings
@@ -66,11 +66,17 @@ untrusted users.
 
 ## Scheduling and capacity
 
-The existing crawlers run at 12:00, 17:00, and 23:00 UTC. The SAM stack creates
-the scoring schedule at 12:45, 17:45, and 23:45 UTC. Each scoring invocation
-loads at most 20 eligible jobs and evaluates them for every active profile.
+The dashboard SAM stack owns all three schedules. Workday and JobSpy run at
+10:00, 14:00, and 20:00 in `America/Toronto`; personalized scoring follows at
+10:45, 14:45, and 20:45. EventBridge Scheduler applies daylight-saving changes
+automatically. Each scoring invocation loads at most 20 eligible jobs and
+evaluates them for every active profile.
 This conservative batch size leaves retry headroom inside Lambda's 15-minute
 maximum. Repeated runs skip unchanged `(user, job, profile, prompt)` versions.
+
+The crawler schedules target the existing `job-discovery-workday` and
+`job-discovery-jobspy` functions. CloudFormation manages their invocation role
+and schedules, but intentionally does not replace or recreate those Lambdas.
 
 ## Required runtime configuration
 
@@ -97,3 +103,8 @@ This is a reversible display state; no DynamoDB job is deleted.
 The direct Lambda code-deployment workflow additionally requires GitHub
 variable `SCORING_FUNCTION_NAME=job-discovery-score`. Run the dashboard SAM
 deployment once before enabling the direct workflow for the new function.
+
+Before the first deployment that creates the managed crawler schedules, disable
+the legacy console-created EventBridge schedules. The managed resources use the
+names `job-discovery-workday-managed` and `job-discovery-jobspy-managed`; keeping
+the legacy schedules enabled would invoke each crawler twice.

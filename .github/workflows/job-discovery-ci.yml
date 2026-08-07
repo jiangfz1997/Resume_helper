@@ -53,6 +53,12 @@ jobs:
           python job-discovery/lambda_dashboard/build.py
           python job-discovery/lambda_scoring/build.py
 
+      - name: Set up AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate dashboard infrastructure
+        run: sam validate --template-file job-discovery/infra/dashboard-api.yaml
+
       - name: Validate Lambda packages
         shell: bash
         run: |
