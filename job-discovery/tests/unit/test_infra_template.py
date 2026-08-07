@@ -58,3 +58,19 @@ def test_scheduler_role_can_only_invoke_configured_crawlers() -> None:
             ],
         }
     ]
+
+
+def test_discovery_scheduler_resources_are_retained_for_stack_migration() -> None:
+    resources = _template()["Resources"]
+
+    for logical_id in (
+        "DiscoverySchedulerRole",
+        "WorkdayDiscoverySchedule",
+        "JobSpyDiscoverySchedule",
+    ):
+        resource = resources[logical_id]
+        assert resource["DeletionPolicy"] == "Retain"
+        assert resource["UpdateReplacePolicy"] == "Retain"
+
+    outputs = _template()["Outputs"]
+    assert outputs["DiscoverySchedulerRoleName"]["Value"] == "DiscoverySchedulerRole"

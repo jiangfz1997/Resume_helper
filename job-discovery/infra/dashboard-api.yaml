@@ -124,6 +124,8 @@ Resources:
 
   DiscoverySchedulerRole:
     Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -145,6 +147,8 @@ Resources:
 
   WorkdayDiscoverySchedule:
     Type: AWS::Scheduler::Schedule
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Name: job-discovery-workday-managed
       Description: Run the shared Workday discovery crawler three times per Toronto day
@@ -163,6 +167,8 @@ Resources:
 
   JobSpyDiscoverySchedule:
     Type: AWS::Scheduler::Schedule
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Name: job-discovery-jobspy-managed
       Description: Run the shared JobSpy discovery crawler three times per Toronto day
@@ -393,6 +399,9 @@ Outputs:
     Value: !Ref DashboardUserDataTable
   PersonalizedScoringFunctionName:
     Value: !Ref PersonalizedScoringFunction
+  DiscoverySchedulerRoleName:
+    Description: Physical role name required by the staged Discovery stack import
+    Value: !Ref DiscoverySchedulerRole
   WorkdayDiscoveryScheduleName:
     Value: !Ref WorkdayDiscoverySchedule
   JobSpyDiscoveryScheduleName:
