@@ -1,18 +1,20 @@
-name: Deploy job discovery Lambdas
+name: Deploy discovery crawlers
 
 on:
   push:
     branches:
       - main
     paths:
-      - "job-discovery/src/**"
+      - "job-discovery/src/job_discovery/application/ingest.py"
+      - "job-discovery/src/job_discovery/dashboard/models.py"
+      - "job-discovery/src/job_discovery/domain/**"
+      - "job-discovery/src/job_discovery/repositories/**"
+      - "job-discovery/src/job_discovery/sources/**"
       - "job-discovery/lambda_workday/**"
       - "job-discovery/lambda_jobspy/**"
-      - "job-discovery/lambda_dashboard/**"
-      - "job-discovery/lambda_scoring/**"
       - "job-discovery/pyproject.toml"
-      - "job-discovery/requirements-*.txt"
-      - ".github/workflows/deploy-job-discovery-lambdas.yml"
+      - "job-discovery/requirements-tierb.txt"
+      - ".github/workflows/deploy-discovery.yml"
   workflow_dispatch:
 
 permissions:
@@ -33,8 +35,6 @@ jobs:
       LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
       WORKDAY_FUNCTION_NAME: ${{ vars.WORKDAY_FUNCTION_NAME }}
       JOBSPY_FUNCTION_NAME: ${{ vars.JOBSPY_FUNCTION_NAME }}
-      DASHBOARD_FUNCTION_NAME: ${{ vars.DASHBOARD_FUNCTION_NAME }}
-      SCORING_FUNCTION_NAME: ${{ vars.SCORING_FUNCTION_NAME }}
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -56,12 +56,10 @@ jobs:
       - name: Run tests
         run: python -m pytest job-discovery/tests
 
-      - name: Build production Lambda packages
+      - name: Build crawler Lambda packages
         run: |
           python job-discovery/lambda_workday/build.py
           python job-discovery/lambda_jobspy/build.py
-          python job-discovery/lambda_dashboard/build.py
-          python job-discovery/lambda_scoring/build.py
 
       - name: Validate deployment configuration
         shell: bash
@@ -72,8 +70,6 @@ jobs:
             LAMBDA_ARTIFACT_BUCKET
             WORKDAY_FUNCTION_NAME
             JOBSPY_FUNCTION_NAME
-            DASHBOARD_FUNCTION_NAME
-            SCORING_FUNCTION_NAME
           )
           for name in "${required[@]}"; do
             if [[ -z "${!name}" ]]; then
@@ -88,7 +84,7 @@ jobs:
           role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Upload immutable Lambda packages
+      - name: Upload immutable crawler packages
         shell: bash
         run: |
           release_prefix="job-discovery/${GITHUB_SHA}"
@@ -99,14 +95,8 @@ jobs:
           aws s3 cp job-discovery/lambda_jobspy/dist/lambda-jobspy.zip \
             "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-jobspy.zip" \
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
-          aws s3 cp job-discovery/lambda_dashboard/dist/lambda-dashboard.zip \
-            "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-dashboard.zip" \
-            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
-          aws s3 cp job-discovery/lambda_scoring/dist/lambda-scoring.zip \
-            "s3://${LAMBDA_ARTIFACT_BUCKET}/${release_prefix}/lambda-scoring.zip" \
-            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
 
-      - name: Update Lambda function code
+      - name: Update crawler Lambda code
         shell: bash
         run: |
           validate_update() {
@@ -144,24 +134,18 @@ jobs:
 
           validate_update "$WORKDAY_FUNCTION_NAME" lambda-workday.zip
           validate_update "$JOBSPY_FUNCTION_NAME" lambda-jobspy.zip
-          validate_update "$DASHBOARD_FUNCTION_NAME" lambda-dashboard.zip
-          validate_update "$SCORING_FUNCTION_NAME" lambda-scoring.zip
 
           deploy_function "$WORKDAY_FUNCTION_NAME" lambda-workday.zip
           deploy_function "$JOBSPY_FUNCTION_NAME" lambda-jobspy.zip
-          deploy_function "$DASHBOARD_FUNCTION_NAME" lambda-dashboard.zip
-          deploy_function "$SCORING_FUNCTION_NAME" lambda-scoring.zip
 
       - name: Write deployment summary
         shell: bash
         run: |
           {
-            echo "## Job discovery Lambda deployment"
+            echo "## Discovery crawler deployment"
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Artifact prefix: \`s3://${LAMBDA_ARTIFACT_BUCKET}/${RELEASE_PREFIX}/\`"
             echo "- Workday: \`${WORKDAY_FUNCTION_NAME}\`"
             echo "- JobSpy: \`${JOBSPY_FUNCTION_NAME}\`"
-            echo "- Dashboard: \`${DASHBOARD_FUNCTION_NAME}\`"
-            echo "- Personalized scoring: \`${SCORING_FUNCTION_NAME}\`"
           } >> "$GITHUB_STEP_SUMMARY"

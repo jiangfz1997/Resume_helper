@@ -5,14 +5,14 @@ on:
     paths:
       - "job-discovery/**"
       - ".github/workflows/job-discovery-ci.yml"
-      - ".github/workflows/deploy-job-discovery-lambdas.yml"
+      - ".github/workflows/deploy-discovery.yml"
   push:
     branches-ignore:
       - main
     paths:
       - "job-discovery/**"
       - ".github/workflows/job-discovery-ci.yml"
-      - ".github/workflows/deploy-job-discovery-lambdas.yml"
+      - ".github/workflows/deploy-discovery.yml"
   workflow_dispatch:
 
 permissions:
