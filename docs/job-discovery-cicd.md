@@ -1,97 +1,154 @@
-# Job discovery CI/CD
+# Job Discovery CI/CD
 
-Job discovery uses separate workflows for validation, Lambda code deployment,
-and dashboard infrastructure deployment.
+Job Discovery uses one validation workflow and four production deployment
+workflows. Deployments are split by runtime ownership so a frontend change does
+not rebuild Lambda packages and a crawler change does not redeploy the dashboard
+stack.
 
-## Workflows
+## Workflow ownership
 
-### Job discovery CI
+| Workflow | Owns | AWS write access |
+|---|---|---|
+| `job-discovery-ci.yml` | Tests, package builds, SAM validation | None |
+| `deploy-discovery.yml` | Workday and JobSpy Lambda code | S3 artifacts and Lambda code updates |
+| `deploy-dashboard.yml` | Dashboard API, personalized scorer, Cognito, user-data table, and schedules | SAM/CloudFormation deployment |
+| `deploy-candidate-profile.yml` | Candidate Profile API, extraction worker, and profile table | SAM/CloudFormation deployment |
+| `deploy-frontend.yml` | Vue build in S3 and CloudFront cache | S3 website and CloudFront invalidation |
 
-`.github/workflows/job-discovery-ci.yml` runs for pull requests, non-main
-branch pushes, and manual dispatches when `job-discovery` changes. It:
+All four production workflows use the `job-discovery-production` concurrency
+group with cancellation disabled. Related deployments can queue, but they cannot
+modify production concurrently.
 
-1. installs the development dependencies;
-2. runs the unit tests;
-3. builds the Workday, JobSpy, dashboard, and personalized-scoring Lambda packages;
-4. validates the zip files; and
-5. retains them as a GitHub Actions artifact for seven days.
+### Job Discovery CI
 
-This workflow never connects to AWS.
+`.github/workflows/job-discovery-ci.yml` runs for relevant pull requests,
+non-`main` branch pushes, and manual dispatches. It:
 
-### Lambda deployment
+1. installs development dependencies;
+2. runs the Job Discovery test suite;
+3. builds all four Job Discovery Lambda packages;
+4. validates the dashboard SAM template and zip files; and
+5. retains the packages as a GitHub Actions artifact for seven days.
 
-`.github/workflows/deploy-job-discovery-lambdas.yml` runs after a
-runtime-affecting change is pushed to `main`, or when manually dispatched. It
-repeats the tests and builds, authenticates to AWS through GitHub OIDC, uploads
-immutable packages under `job-discovery/<git-sha>/`, and updates these existing
-functions:
+The artifact produced here is stored by GitHub for inspection. It is not copied
+to the production S3 bucket, and this workflow never authenticates to AWS.
+
+### Discovery crawler deployment
+
+`.github/workflows/deploy-discovery.yml` runs after crawler-related paths reach
+`main`, or by manual dispatch. It tests the service, builds the Workday and
+JobSpy packages, uploads immutable objects under
+`job-discovery/<git-sha>/`, and updates only:
 
 - `job-discovery-workday`
 - `job-discovery-jobspy`
+
+The workflow publishes a Lambda version and waits for each update to report
+`Successful`. It does not invoke a crawler, update function configuration,
+change DynamoDB tables, or change schedules.
+
+Crawler triggers are intentionally narrower than `job-discovery/src/**`.
+Changes to shared domain, repository, source, ingest, and run-report models
+redeploy the crawlers. Dashboard-only and scoring-only source changes do not.
+
+### Dashboard API deployment
+
+`.github/workflows/deploy-dashboard.yml` runs after dashboard, scoring, shared
+domain/repository, or dashboard infrastructure paths reach `main`, or by manual
+dispatch. It builds two packages and deploys `infra/dashboard-api.yaml`:
+
 - `job-dashboard-read`
 - `job-discovery-score`
 
-The probe Lambda is intentionally excluded. A shared source change rebuilds all
-four production functions because every package contains a copy of
-`src/job_discovery`.
+The SAM stack also owns Cognito, the retained dashboard user-data table, the
+HTTP API, the personalized-scoring schedule, and the Workday/JobSpy crawler
+schedules. The crawler Lambda functions and four shared crawler DynamoDB tables
+already existed before this stack and are referenced by name; this stack does
+not create or update their code.
 
-The workflow publishes a Lambda version and waits for each update to report
-`Successful`. It does not invoke the crawlers, change their EventBridge
-schedules, or update function configuration.
+### Candidate Profile deployment
 
-### Dashboard deployment
+`.github/workflows/deploy-candidate-profile.yml` runs after
+`candidate-profile/**` changes reach `main`, or by manual dispatch. It deploys
+the Candidate Profile API, extraction worker, and retained profile table from
+`candidate-profile/infra/candidate-profile.yaml`. It reads the Dashboard stack's
+Cognito outputs so both APIs use the same authenticated users.
 
-`.github/workflows/deploy-dashboard.yml` runs automatically when relevant
-infrastructure or frontend changes reach `main`, and remains manually
-dispatchable. It manages the SAM stack, all three schedules, and the Vue
-application. Its dashboard Lambda package uses an immutable S3 key passed to
-CloudFormation, preventing a later SAM deployment from restoring an older
-fixed-key package.
+### Frontend deployment
 
-Both production workflows use the `job-discovery-production` concurrency group,
-so a merge that changes runtime code and infrastructure cannot race two Lambda
-updates. Pull requests only run Job discovery CI, including `sam validate`, and
-never connect to AWS.
+`.github/workflows/deploy-frontend.yml` runs only for `frontend-vue/**` or its
+own workflow file, or by manual dispatch. It reads outputs from the Dashboard
+and Candidate Profile stacks, injects them as Vite build settings, syncs the
+build to the private website bucket, and invalidates CloudFront.
 
 ## GitHub configuration
 
-Create a GitHub environment named `production`. Add these environment or
-repository variables for Lambda deployment:
+Create a GitHub environment named `production`. Store configuration as
+environment or repository variables unless a value is explicitly identified as
+a secret.
+
+### Shared variables
 
 - `AWS_DEPLOY_ROLE_ARN`
-- `AWS_REGION` (`us-east-1` for the current deployment)
+- `AWS_REGION`
+
+### Discovery crawler variables
+
 - `LAMBDA_ARTIFACT_BUCKET`
 - `WORKDAY_FUNCTION_NAME` (`job-discovery-workday`)
 - `JOBSPY_FUNCTION_NAME` (`job-discovery-jobspy`)
-- `DASHBOARD_FUNCTION_NAME` (`job-dashboard-read`)
-- `SCORING_FUNCTION_NAME` (`job-discovery-score`)
 
-The existing dashboard workflow additionally requires:
+### Dashboard API variables
 
+- `LAMBDA_ARTIFACT_BUCKET`
 - `DASHBOARD_STACK_NAME`
-- `DASHBOARD_WEB_BUCKET`
-- `CLOUDFRONT_DISTRIBUTION_ID`
 - `DASHBOARD_ORIGIN`
 - `COGNITO_DOMAIN_PREFIX`
 - `RECORDS_TABLE_NAME`
 - `LISTINGS_TABLE_NAME`
 - `GEMINI_MODEL`
+- `WORKDAY_FUNCTION_NAME`
+- `JOBSPY_FUNCTION_NAME`
 
-The dashboard workflow also requires the GitHub Actions secret
-`GEMINI_API_KEY`.
+### Candidate Profile variables
 
-Do not store long-lived AWS access keys in GitHub. Configure the deployment
-role to trust GitHub's OIDC provider and restrict its subject to:
+- `LAMBDA_ARTIFACT_BUCKET`
+- `DASHBOARD_STACK_NAME`
+- `CANDIDATE_PROFILE_STACK_NAME`
+- `CANDIDATE_PROFILE_TABLE_NAME`
+- `DASHBOARD_ORIGIN`
+- `GEMINI_MODEL`
+
+### Frontend variables
+
+- `DASHBOARD_STACK_NAME`
+- `CANDIDATE_PROFILE_STACK_NAME`
+- `DASHBOARD_WEB_BUCKET`
+- `CLOUDFRONT_DISTRIBUTION_ID`
+- `DASHBOARD_ORIGIN`
+
+`GEMINI_API_KEY` is a GitHub Actions environment secret used by the Dashboard
+and Candidate Profile deployments. Do not configure it as a variable and never
+store it in source. Long-lived AWS access keys are not required because the
+workflows assume the deployment role through GitHub OIDC.
+
+Variables named `DASHBOARD_FUNCTION_NAME` and `SCORING_FUNCTION_NAME` are no
+longer consumed by these workflows. Those functions are defined by the
+Dashboard SAM stack.
+
+## GitHub OIDC and IAM
+
+Restrict the deployment role's OIDC subject to the repository and production
+environment:
 
 ```text
 repo:jiangfz1997/Resume_helper:environment:production
 ```
 
-The role needs `s3:PutObject` for the artifact prefix and
-`s3:GetObject` for uploaded packages, plus `lambda:UpdateFunctionCode`,
-`lambda:GetFunction`, and `lambda:GetFunctionConfiguration` for the four
-functions. `lambda:GetFunction` is required by the `function-updated-v2` waiter. A minimal policy for
-the code-deployment workflow is:
+The direct crawler deployment needs `s3:PutObject` and `s3:GetObject` for the
+artifact prefix, plus `lambda:UpdateFunctionCode`, `lambda:GetFunction`, and
+`lambda:GetFunctionConfiguration` for only the two crawler functions.
+`lambda:GetFunction` is required by the `function-updated-v2` waiter.
 
 ```json
 {
@@ -111,58 +168,39 @@ the code-deployment workflow is:
       ],
       "Resource": [
         "arn:aws:lambda:us-east-1:492832370104:function:job-discovery-workday",
-        "arn:aws:lambda:us-east-1:492832370104:function:job-discovery-jobspy",
-        "arn:aws:lambda:us-east-1:492832370104:function:job-dashboard-read",
-        "arn:aws:lambda:us-east-1:492832370104:function:job-discovery-score"
+        "arn:aws:lambda:us-east-1:492832370104:function:job-discovery-jobspy"
       ]
     }
   ]
 }
 ```
 
-The role trust policy is:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Federated": "arn:aws:iam::492832370104:oidc-provider/token.actions.githubusercontent.com"
-      },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:jiangfz1997/Resume_helper:environment:production"
-        }
-      }
-    }
-  ]
-}
-```
-
-The dashboard SAM workflow needs its existing CloudFormation, API Gateway,
-Cognito, IAM, S3, and CloudFront deployment permissions as well. It also needs
-`dynamodb:CreateTable`, `dynamodb:DescribeTable`, `dynamodb:UpdateTable`,
-`dynamodb:DeleteTable`, `dynamodb:TagResource`, `dynamodb:UntagResource`, and
-`dynamodb:ListTagsOfResource` for the retained dashboard user-data table. The
-same role can be reused initially; splitting infrastructure and code-deployment
-roles can be done later. The SAM deploy role also needs EventBridge Scheduler
-lifecycle permissions and scoped IAM role/`iam:PassRole` permissions for the
-scheduled scoring target.
-
-The same Scheduler permissions cover the managed Workday and JobSpy schedules.
-Their generated execution role can invoke only the two function names supplied
-through `WORKDAY_FUNCTION_NAME` and `JOBSPY_FUNCTION_NAME`.
+The SAM workflows also need their existing scoped CloudFormation, Lambda, API
+Gateway, Cognito, IAM, S3, EventBridge Scheduler, and DynamoDB permissions. The
+frontend workflow needs website-bucket writes and CloudFront invalidation. The
+same OIDC role can be reused initially; separate deployment roles can be added
+later if stricter isolation becomes useful.
 
 ## Artifact retention and rollback
 
 Enable S3 versioning and add a lifecycle rule for the `job-discovery/` prefix,
-for example deleting packages after 90 days. To roll back, manually dispatch a
-workflow revision containing the desired code, or call
-`lambda update-function-code` with the package key from a previous commit.
+for example deleting packages after 90 days. To roll back crawler code, update a
+function from the immutable package key belonging to a previous commit. For
+SAM-managed services, redeploy the desired repository revision so code and
+infrastructure remain consistent.
 
-Production deploys are serialized by the `job-discovery-production`
-concurrency group. Feature branches cannot update AWS.
+## Current infrastructure boundary
+
+The workflow split does not migrate existing AWS resources between
+CloudFormation stacks:
+
+- Workday and JobSpy Lambda functions remain pre-existing resources updated
+  directly by `deploy-discovery.yml`.
+- The four shared crawler DynamoDB tables remain external resources referenced
+  by name.
+- Crawler and scoring schedules remain managed by the Dashboard SAM stack.
+
+Moving these existing resources into a dedicated Discovery stack requires a
+staged CloudFormation retain/import migration. It should not be combined with a
+routine workflow refactor because declaring an existing physical resource in a
+new stack can fail with `AlreadyExists` or cause an unintended replacement.

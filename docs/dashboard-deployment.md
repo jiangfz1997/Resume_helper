@@ -1,9 +1,12 @@
 # Dashboard deployment
 
-The dashboard is deployed by `.github/workflows/deploy-dashboard.yml`. The
-workflow tests and packages the authenticated dashboard API, deploys its SAM stack, builds the Vue
-application from the stack outputs, syncs the build to S3, and invalidates
-CloudFront.
+The dashboard backend is deployed by `.github/workflows/deploy-dashboard.yml`.
+The workflow tests and packages the authenticated dashboard API and personalized
+scorer, then deploys their SAM stack. It does not build or publish Vue.
+
+The static Vue application is deployed independently by
+`.github/workflows/deploy-frontend.yml`. That workflow reads both backend stack
+outputs, builds the frontend, syncs it to S3, and invalidates CloudFront.
 
 Create a GitHub `production` environment, configure GitHub Actions OIDC for this
 repository, and add these repository or environment variables:
@@ -19,6 +22,14 @@ repository, and add these repository or environment variables:
 - `RECORDS_TABLE_NAME`
 - `LISTINGS_TABLE_NAME`
 - `GEMINI_MODEL`
+- `WORKDAY_FUNCTION_NAME`
+- `JOBSPY_FUNCTION_NAME`
+
+The frontend workflow additionally requires:
+
+- `CANDIDATE_PROFILE_STACK_NAME`
+- `DASHBOARD_WEB_BUCKET`
+- `CLOUDFRONT_DISTRIBUTION_ID`
 
 Add `GEMINI_API_KEY` as a GitHub Actions **secret**, not a variable.
 
@@ -28,11 +39,10 @@ API Gateway, Cognito, IAM, S3, CloudFront, EventBridge Scheduler, and DynamoDB p
 stack and deployment workflow. DynamoDB is required because the stack creates
 the retained user-data table and the scheduled personalized-scoring worker.
 
-The workflow runs automatically after relevant infrastructure or frontend
-changes reach `main`, and it can also be dispatched manually from GitHub
-Actions. Pull requests only run validation and never update AWS. Configure a
-required reviewer on the `production` environment if an approval gate is
-desired.
+Each workflow runs only after its relevant paths reach `main`, and each can be
+dispatched manually from GitHub Actions. Pull requests only run validation and
+never update AWS. Configure a required reviewer on the `production`
+environment if an approval gate is desired.
 
 The first deployment after this change creates the
 `job-discovery-user-data` DynamoDB table, the `job-discovery-score` Lambda, and
@@ -49,6 +59,7 @@ duplicate invocations.
 See `docs/job-discovery-multi-user.md` for the shared-crawl/personal-score model
 and the one-time crawler IAM/environment change.
 
-Lambda-only code changes are deployed separately by
-`.github/workflows/deploy-job-discovery-lambdas.yml`. See
+Crawler-only code changes are deployed separately by
+`.github/workflows/deploy-discovery.yml`. Dashboard and scoring changes remain
+owned by `.github/workflows/deploy-dashboard.yml`. See
 `docs/job-discovery-cicd.md` for triggers, permissions, and rollback details.
