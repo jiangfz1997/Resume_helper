@@ -75,7 +75,16 @@
             />
           </n-form-item>
 
-          <div v-if="selected.location"><b>Location:</b> {{ selected.location }}</div>
+          <n-form label-placement="top">
+            <n-form-item label="Company"><n-input v-model:value="editForm.company" /></n-form-item>
+            <n-form-item label="Title"><n-input v-model:value="editForm.title" /></n-form-item>
+            <n-form-item label="Location"><n-input v-model:value="editForm.location" /></n-form-item>
+            <n-form-item label="Notes"><n-input v-model:value="editForm.notes" type="textarea" placeholder="Interview notes, contacts, next steps…" /></n-form-item>
+            <n-button type="primary" :loading="editSaving" :disabled="!editDirty" @click="saveEdits(selected.applicationId)">
+              Save changes
+            </n-button>
+          </n-form>
+
           <div><b>Applied:</b> {{ formatDate(selected.appliedAt) }}</div>
           <a v-if="selected.sourceUrl" :href="selected.sourceUrl" target="_blank" rel="noopener noreferrer">Open original posting ↗</a>
 
@@ -119,6 +128,8 @@ const addLoading = ref(false)
 const addForm = ref({ url: '' })
 const showDetail = ref(false)
 const selectedId = ref<string | null>(null)
+const editForm = ref({ company: '', title: '', location: '', notes: '' })
+const editSaving = ref(false)
 
 const selected = computed(() => applications.value.find((application) => application.applicationId === selectedId.value) ?? null)
 const visibleApplications = computed(() => statusFilter.value === 'all'
@@ -127,6 +138,13 @@ const visibleApplications = computed(() => statusFilter.value === 'all'
 const statusBreakdown = computed(() => Object.entries(stats.value.byStatus)
   .map(([status, count]) => ({ status: status as ApplicationStatus, count: count ?? 0 }))
   .filter((entry) => entry.count > 0))
+const editDirty = computed(() => {
+  if (!selected.value) return false
+  return editForm.value.company !== selected.value.company
+    || editForm.value.title !== selected.value.title
+    || editForm.value.location !== (selected.value.location ?? '')
+    || editForm.value.notes !== (selected.value.notes ?? '')
+})
 
 const statusOptions: { label: string; value: ApplicationStatus }[] = [
   { label: 'Applied', value: 'applied' },
@@ -178,6 +196,35 @@ async function load(): Promise<void> {
 function openDetail(applicationId: string): void {
   selectedId.value = applicationId
   showDetail.value = true
+  resetEditForm()
+}
+
+function resetEditForm(): void {
+  if (!selected.value) return
+  editForm.value = {
+    company: selected.value.company,
+    title: selected.value.title,
+    location: selected.value.location ?? '',
+    notes: selected.value.notes ?? '',
+  }
+}
+
+async function saveEdits(applicationId: string): Promise<void> {
+  editSaving.value = true
+  try {
+    const updated = await applicationDataSource.updateFields(applicationId, {
+      company: editForm.value.company,
+      title: editForm.value.title,
+      location: editForm.value.location || null,
+      notes: editForm.value.notes || null,
+    })
+    applications.value = applications.value.map((application) => application.applicationId === applicationId ? updated : application)
+    message.success('Saved.')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : 'Could not save changes.')
+  } finally {
+    editSaving.value = false
+  }
 }
 
 async function submitAdd(): Promise<void> {

@@ -1,0 +1,131 @@
+name: Deploy candidate profile API
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "candidate-profile/**"
+      - ".github/workflows/deploy-candidate-profile.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: job-discovery-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
+      DASHBOARD_STACK_NAME: ${{ vars.DASHBOARD_STACK_NAME }}
+      STACK_NAME: ${{ vars.CANDIDATE_PROFILE_STACK_NAME }}
+      TABLE_NAME: ${{ vars.CANDIDATE_PROFILE_TABLE_NAME }}
+      DASHBOARD_ORIGIN: ${{ vars.DASHBOARD_ORIGIN }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: candidate-profile/pyproject.toml
+
+      - name: Install and test candidate profile
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./candidate-profile[dev]"
+          python -m pytest candidate-profile/tests
+
+      - name: Build candidate profile Lambdas
+        run: |
+          python candidate-profile/lambda_api/build.py
+          python candidate-profile/lambda_extract/build.py
+
+      - name: Set up AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET DASHBOARD_STACK_NAME STACK_NAME TABLE_NAME DASHBOARD_ORIGIN GEMINI_MODEL GEMINI_API_KEY)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing GitHub Actions variable: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read dashboard stack outputs
+        shell: bash
+        run: |
+          read_output() {
+            local output_key="$1"
+            local value
+            value=$(aws cloudformation describe-stacks \
+              --stack-name "$DASHBOARD_STACK_NAME" \
+              --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
+              --output text)
+            if [[ -z "$value" || "$value" == "None" ]]; then
+              echo "Missing CloudFormation output ${output_key} from ${DASHBOARD_STACK_NAME}" >&2
+              exit 1
+            fi
+            printf '%s' "$value"
+          }
+
+          echo "DASHBOARD_USER_POOL_ID=$(read_output UserPoolId)" >> "$GITHUB_ENV"
+          echo "DASHBOARD_USER_POOL_CLIENT_ID=$(read_output UserPoolClientId)" >> "$GITHUB_ENV"
+
+      - name: Upload candidate profile Lambda packages
+        shell: bash
+        run: |
+          api_code_key="candidate-profile/${GITHUB_SHA}/lambda-api.zip"
+          extract_code_key="candidate-profile/${GITHUB_SHA}/lambda-extract.zip"
+          echo "API_CODE_KEY=${api_code_key}" >> "$GITHUB_ENV"
+          echo "EXTRACT_CODE_KEY=${extract_code_key}" >> "$GITHUB_ENV"
+          aws s3 cp candidate-profile/lambda_api/dist/lambda-api.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${api_code_key}" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+          aws s3 cp candidate-profile/lambda_extract/dist/lambda-extract.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${extract_code_key}" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+
+      - name: Deploy candidate profile API
+        run: |
+          sam validate --template-file candidate-profile/infra/candidate-profile.yaml
+          sam deploy \
+            --template-file candidate-profile/infra/candidate-profile.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --s3-bucket "$LAMBDA_ARTIFACT_BUCKET" \
+            --s3-prefix "candidate-profile/sam" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              UserPoolId="$DASHBOARD_USER_POOL_ID" \
+              UserPoolClientId="$DASHBOARD_USER_POOL_CLIENT_ID" \
+              AllowedOrigin="$DASHBOARD_ORIGIN" \
+              LambdaArtifactBucket="$LAMBDA_ARTIFACT_BUCKET" \
+              ApiCodeKey="$API_CODE_KEY" \
+              ExtractCodeKey="$EXTRACT_CODE_KEY" \
+              GeminiApiKey="$GEMINI_API_KEY" \
+              GeminiModel="$GEMINI_MODEL" \
+              TableName="$TABLE_NAME"

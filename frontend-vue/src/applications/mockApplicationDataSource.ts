@@ -4,6 +4,7 @@ import type {
   ApplicationStatus,
   CreateApplicationFromJob,
   JobApplication,
+  UpdateApplicationFields,
 } from './models'
 
 const STORAGE_KEY = 'candidate-profile:applications:v1'
@@ -92,6 +93,25 @@ export class MockApplicationDataSource implements ApplicationDataSource {
           status,
           updatedAt: now,
           statusHistory: [...application.statusHistory, { status, note: note ?? null, changedAt: now }],
+        }
+      : application)
+    save(updated)
+    const result = updated.find((application) => application.applicationId === applicationId)
+    if (!result) throw new Error('application not found')
+    return result
+  }
+
+  async updateFields(applicationId: string, data: UpdateApplicationFields): Promise<JobApplication> {
+    const now = new Date().toISOString()
+    const applications = load()
+    const updated = applications.map((application) => application.applicationId === applicationId
+      ? {
+          ...application,
+          ...(data.company !== undefined ? { company: data.company } : {}),
+          ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(data.location !== undefined ? { location: data.location } : {}),
+          ...(data.notes !== undefined ? { notes: data.notes } : {}),
+          updatedAt: now,
         }
       : application)
     save(updated)

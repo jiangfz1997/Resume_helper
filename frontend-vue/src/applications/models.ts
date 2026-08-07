@@ -53,12 +53,20 @@ export interface CreateApplicationFromJob {
   jdText: string
 }
 
+export interface UpdateApplicationFields {
+  company?: string
+  title?: string
+  location?: string | null
+  notes?: string | null
+}
+
 export interface ApplicationDataSource {
   listApplications(status?: ApplicationStatus): Promise<JobApplication[]>
   getStats(): Promise<ApplicationStats>
   createFromJob(data: CreateApplicationFromJob): Promise<JobApplication>
   createFromUrl(url: string): Promise<JobApplication>
   updateStatus(applicationId: string, status: ApplicationStatus, note?: string): Promise<JobApplication>
+  updateFields(applicationId: string, data: UpdateApplicationFields): Promise<JobApplication>
   deleteApplication(applicationId: string): Promise<void>
   refreshApplication(applicationId: string): Promise<JobApplication | null>
 }
