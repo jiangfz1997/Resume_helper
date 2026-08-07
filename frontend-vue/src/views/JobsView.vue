@@ -6,7 +6,7 @@
         <h1>Your next role, without the noise.</h1>
         <p>Review discovered roles, understand their coarse score, and build a focused shortlist.</p>
       </div>
-      <div class="snapshot"><i /><div><b>{{ pendingCount }} pending · {{ unreadRunCount }} unread runs</b><small>{{ scoringQueue.pending }} waiting · {{ scoringQueue.queued }} queued · {{ scoringQueue.failed }} failed · {{ unviewedCount }} unopened</small></div></div>
+      <div class="snapshot"><i /><div><b>{{ pendingCount }} pending · {{ unreadRunCount }} unread runs</b><small>{{ scoringQueue.scoredCurrent }} scored · {{ scoringQueue.pending }} waiting · {{ scoringQueue.queued }} queued · {{ scoringQueue.failed }} failed · {{ unviewedCount }} unopened</small></div></div>
     </header>
 
     <section class="filters">
@@ -163,7 +163,7 @@ const status = ref<StatusFilter>('pending')
 
 const categoryOptions = [{ label: 'All tracks', value: 'all' }, { label: 'SDE', value: 'sde' }, { label: 'QA', value: 'qa' }]
 const eligibilityOptions = [{ label: 'Actionable roles', value: 'actionable' }, { label: 'Eligible', value: 'eligible' }, { label: 'Needs review', value: 'review' }, { label: 'Excluded', value: 'excluded' }, { label: 'All decisions', value: 'all' }]
-const scoreOptions = [{ label: 'Any score', value: 'all' }, { label: 'Strong · 8+', value: 'strong' }, { label: 'Potential · 5+', value: 'potential' }, { label: 'Not scored', value: 'unscored' }]
+const scoreOptions = [{ label: 'Any score', value: 'all' }, { label: 'Scored roles', value: 'scored' }, { label: 'Strong · 8+', value: 'strong' }, { label: 'Potential · 5+', value: 'potential' }, { label: 'Not scored', value: 'unscored' }]
 const freshnessOptions = [{ label: 'Current roles', value: 'current' }, { label: 'Active only', value: 'active' }, { label: 'Archived', value: 'archived' }, { label: 'All ages', value: 'all' }]
 const sortOptions = [{ label: 'Newest first', value: 'newest' }, { label: 'Highest score', value: 'score' }, { label: 'Company A–Z', value: 'company' }]
 const runOptions = computed(() => [{ label: `All runs${unreadRunCount.value ? ` · ${unreadRunCount.value} unread` : ''}`, value: 'all' }, ...runs.value.map((run) => ({
@@ -188,6 +188,7 @@ const visibleJobs = computed(() => jobs.value.filter((job) => {
   if (status.value !== 'pending' && statusFor(job.jobId) !== status.value) return false
   if (score.value === 'strong' && (scoreFor(job.jobId) ?? -1) < 8) return false
   if (score.value === 'potential' && (scoreFor(job.jobId) ?? -1) < 5) return false
+  if (score.value === 'scored' && scoreFor(job.jobId) === null) return false
   if (score.value === 'unscored' && scoreFor(job.jobId) !== null) return false
   return true
 }).sort((left, right) => {
