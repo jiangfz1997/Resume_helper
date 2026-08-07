@@ -1,0 +1,23 @@
+[project]
+name = "candidate-profile"
+version = "0.1.0"
+description = "Candidate-owned data: resume master profile and job application tracking. Decoupled from job-discovery's crawl/score domain; shares only the Cognito user pool."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7.0",
+    "boto3>=1.34.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "moto[dynamodb]>=5.0.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/candidate_profile"]

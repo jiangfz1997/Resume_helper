@@ -1,4 +1,4 @@
-name: Deploy dashboard
+name: Deploy dashboard and candidate profile
 
 on:
   workflow_dispatch:
@@ -8,6 +8,7 @@ on:
     paths:
       - "frontend-vue/**"
       - "job-discovery/infra/dashboard-api.yaml"
+      - "candidate-profile/**"
       - ".github/workflows/deploy-dashboard.yml"
 
 permissions:
@@ -37,6 +38,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       WORKDAY_FUNCTION_NAME: ${{ vars.WORKDAY_FUNCTION_NAME }}
       JOBSPY_FUNCTION_NAME: ${{ vars.JOBSPY_FUNCTION_NAME }}
+      CANDIDATE_PROFILE_STACK_NAME: ${{ vars.CANDIDATE_PROFILE_STACK_NAME }}
+      CANDIDATE_PROFILE_TABLE_NAME: ${{ vars.CANDIDATE_PROFILE_TABLE_NAME }}
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -54,10 +57,20 @@ jobs:
           python -m pip install -e "./job-discovery[dev]"
           python -m pytest job-discovery/tests
 
+      - name: Install and test candidate profile
+        run: |
+          python -m pip install -e "./candidate-profile[dev]"
+          python -m pytest candidate-profile/tests
+
       - name: Build dashboard Lambdas
         run: |
           python job-discovery/lambda_dashboard/build.py
           python job-discovery/lambda_scoring/build.py
+
+      - name: Build candidate profile Lambdas
+        run: |
+          python candidate-profile/lambda_api/build.py
+          python candidate-profile/lambda_extract/build.py
 
       - name: Set up AWS SAM
         uses: aws-actions/setup-sam@v2
@@ -65,7 +78,7 @@ jobs:
       - name: Validate deployment configuration
         shell: bash
         run: |
-          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME GEMINI_MODEL GEMINI_API_KEY WORKDAY_FUNCTION_NAME JOBSPY_FUNCTION_NAME)
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME GEMINI_MODEL GEMINI_API_KEY WORKDAY_FUNCTION_NAME JOBSPY_FUNCTION_NAME CANDIDATE_PROFILE_STACK_NAME CANDIDATE_PROFILE_TABLE_NAME)
           for name in "${required[@]}"; do
             if [[ -z "${!name}" ]]; then
               echo "Missing GitHub Actions variable: ${name}" >&2
@@ -91,6 +104,20 @@ jobs:
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
           aws s3 cp job-discovery/lambda_scoring/dist/lambda-scoring.zip \
             "s3://${LAMBDA_ARTIFACT_BUCKET}/${scoring_code_key}" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+
+      - name: Upload candidate profile Lambda package
+        shell: bash
+        run: |
+          api_code_key="candidate-profile/${GITHUB_SHA}/lambda-api.zip"
+          extract_code_key="candidate-profile/${GITHUB_SHA}/lambda-extract.zip"
+          echo "CANDIDATE_PROFILE_API_CODE_KEY=${api_code_key}" >> "$GITHUB_ENV"
+          echo "CANDIDATE_PROFILE_EXTRACT_CODE_KEY=${extract_code_key}" >> "$GITHUB_ENV"
+          aws s3 cp candidate-profile/lambda_api/dist/lambda-api.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${api_code_key}" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+          aws s3 cp candidate-profile/lambda_extract/dist/lambda-extract.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${extract_code_key}" \
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
 
       - name: Deploy dashboard API
@@ -120,15 +147,46 @@ jobs:
               WorkdayFunctionName="$WORKDAY_FUNCTION_NAME" \
               JobSpyFunctionName="$JOBSPY_FUNCTION_NAME"
 
-      - name: Read stack outputs
+      - name: Read dashboard stack outputs
         shell: bash
         run: |
           api_url=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          user_pool_id=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
           client_id=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text)
           cognito_domain=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='CognitoLoginDomain'].OutputValue" --output text)
           echo "VITE_JOBS_API_URL=${api_url}" >> "$GITHUB_ENV"
           echo "VITE_COGNITO_CLIENT_ID=${client_id}" >> "$GITHUB_ENV"
           echo "VITE_COGNITO_DOMAIN=${cognito_domain}" >> "$GITHUB_ENV"
+          echo "DASHBOARD_USER_POOL_ID=${user_pool_id}" >> "$GITHUB_ENV"
+
+      - name: Deploy candidate profile API
+        run: |
+          sam validate --template-file candidate-profile/infra/candidate-profile.yaml
+          sam deploy \
+            --template-file candidate-profile/infra/candidate-profile.yaml \
+            --stack-name "$CANDIDATE_PROFILE_STACK_NAME" \
+            --region "$AWS_REGION" \
+            --s3-bucket "$LAMBDA_ARTIFACT_BUCKET" \
+            --s3-prefix "candidate-profile/sam" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              UserPoolId="$DASHBOARD_USER_POOL_ID" \
+              UserPoolClientId="$VITE_COGNITO_CLIENT_ID" \
+              AllowedOrigin="$DASHBOARD_ORIGIN" \
+              LambdaArtifactBucket="$LAMBDA_ARTIFACT_BUCKET" \
+              ApiCodeKey="$CANDIDATE_PROFILE_API_CODE_KEY" \
+              ExtractCodeKey="$CANDIDATE_PROFILE_EXTRACT_CODE_KEY" \
+              GeminiApiKey="$GEMINI_API_KEY" \
+              GeminiModel="$GEMINI_MODEL" \
+              TableName="$CANDIDATE_PROFILE_TABLE_NAME"
+
+      - name: Read candidate profile stack outputs
+        shell: bash
+        run: |
+          applications_api_url=$(aws cloudformation describe-stacks --stack-name "$CANDIDATE_PROFILE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          echo "VITE_APPLICATIONS_API_URL=${applications_api_url}" >> "$GITHUB_ENV"
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

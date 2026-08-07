@@ -74,11 +74,10 @@ const tab = ref<'login' | 'register'>('login')
 
 // ── login ──────────────────────────────────────────────────────
 const loginFormRef = ref<FormInst | null>(null)
-// const loginForm = ref({ email: '', password: '' })
+const loginForm = ref({ email: '', password: '' })
 
 
 // For debug use
-const loginForm = ref({ email: 'fj@uwo.ca', password: '123123123123' })
 
 
 const loginError = ref('')
