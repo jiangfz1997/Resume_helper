@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from candidate_profile.domain.models import (
+    ApplicationStatus,
+    CandidateProfile,
+    CandidateProfileInput,
+    CreateApplicationFromJob,
+    ExtractedJobInfo,
+    JobApplication,
+    ApplicationStats,
+    UpdateApplicationFields,
+)
+
+
+class CandidateProfileRepository(Protocol):
+    def get_profile(self, user_id: str) -> CandidateProfile | None: ...
+
+    def save_profile(self, user_id: str, data: CandidateProfileInput) -> CandidateProfile: ...
+
+    def create_application_from_job(self, user_id: str, data: CreateApplicationFromJob) -> JobApplication: ...
+
+    def create_application_pending(self, user_id: str, url: str) -> JobApplication: ...
+
+    def complete_application_extraction(
+        self, user_id: str, application_id: str, extracted: ExtractedJobInfo, raw_html: str | None
+    ) -> None: ...
+
+    def fail_application_extraction(self, user_id: str, application_id: str, error: str) -> None: ...
+
+    def list_applications(self, user_id: str, status: ApplicationStatus | None = None) -> list[JobApplication]: ...
+
+    def get_application(self, user_id: str, application_id: str) -> JobApplication | None: ...
+
+    def update_application_status(
+        self, user_id: str, application_id: str, status: ApplicationStatus, note: str | None
+    ) -> JobApplication | None: ...
+
+    def update_application_fields(
+        self, user_id: str, application_id: str, data: UpdateApplicationFields
+    ) -> JobApplication | None: ...
+
+    def delete_application(self, user_id: str, application_id: str) -> None: ...
+
+    def get_application_stats(self, user_id: str) -> ApplicationStats: ...
+
+
+class PageFetcher(Protocol):
+    def fetch(self, url: str) -> str:
+        """Return the raw HTML at ``url``. Raises PageFetchError on failure."""
+        ...
+
+
+class JobInfoExtractor(Protocol):
+    def extract(self, page_text: str) -> ExtractedJobInfo:
+        """Pull company/title/location out of already-detagged page text.
+
+        Never rewrites ``jd_text`` itself -- that is taken verbatim from the
+        page so the saved record stays a faithful copy of the posting.
+        """
+        ...

@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform:
+  - AWS::Serverless-2016-10-31
+Description: >
+  Candidate-owned data API: resume master profile and job application
+  tracking history. Deliberately a separate stack from job-discovery's own
+  dashboard-api.yaml -- different bounded context, different DynamoDB table,
+  independent deploy/rollback cadence. Only shares the Cognito user pool
+  already provisioned by that stack, passed in here by ID so users log in
+  once for both APIs.
+
+Parameters:
+  UserPoolId:
+    Type: String
+    Description: Cognito user pool ID from the job-discovery dashboard-api stack's UserPoolId output
+  UserPoolClientId:
+    Type: String
+    Description: Cognito user pool client ID from the job-discovery dashboard-api stack's UserPoolClientId output
+  AllowedOrigin:
+    Type: String
+    Description: Frontend origin, for example https://jobs.example.com
+  LambdaArtifactBucket:
+    Type: String
+    Description: S3 bucket containing the candidate-profile Lambda deployment packages
+  ApiCodeKey:
+    Type: String
+    Description: Immutable S3 key for the lambda_api deployment package
+  ExtractCodeKey:
+    Type: String
+    Description: Immutable S3 key for the lambda_extract deployment package
+  GeminiApiKey:
+    Type: String
+    NoEcho: true
+  GeminiModel:
+    Type: String
+  TableName:
+    Type: String
+    Default: candidate-profile-data
+
+Resources:
+  CandidateProfileTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: entity_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: entity_key
+          KeyType: RANGE
+
+  CandidateProfileApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+        MaxAge: 600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 5
+        ThrottlingRateLimit: 2
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: '$request.header.Authorization'
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}
+              audience:
+                - !Ref UserPoolClientId
+
+  CandidateProfileApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: candidate-profile-api
+      CodeUri:
+        Bucket: !Ref LambdaArtifactBucket
+        Key: !Ref ApiCodeKey
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref CandidateProfileTable
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          REQUIRE_AUTH: 'true'
+          EXTRACT_FUNCTION_NAME: !Ref CandidateProfileExtractFunction
+      Policies:
+        - Statement:
+            - Sid: ReadWriteCandidateProfileTable
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+              Resource: !GetAtt CandidateProfileTable.Arn
+            - Sid: InvokeExtraction
+              Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt CandidateProfileExtractFunction.Arn
+      Events:
+        GetProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: GET
+            Path: /profile
+        PutProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: PUT
+            Path: /profile
+        CreateApplicationFromJob:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: POST
+            Path: /applications/from-job
+        CreateApplicationFromUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: POST
+            Path: /applications/from-url
+        ListApplications:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: GET
+            Path: /applications
+        ApplicationStats:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: GET
+            Path: /applications/stats
+        GetApplication:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: GET
+            Path: /applications/{application_id}
+        UpdateApplicationStatus:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: PATCH
+            Path: /applications/{application_id}/status
+        UpdateApplicationFields:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: PATCH
+            Path: /applications/{application_id}
+        DeleteApplication:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CandidateProfileApi
+            Method: DELETE
+            Path: /applications/{application_id}
+
+  CandidateProfileExtractFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: candidate-profile-extract
+      CodeUri:
+        Bucket: !Ref LambdaArtifactBucket
+        Key: !Ref ExtractCodeKey
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      MemorySize: 256
+      Timeout: 60
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref CandidateProfileTable
+          GEMINI_API_KEY: !Ref GeminiApiKey
+          GEMINI_MODEL: !Ref GeminiModel
+      Policies:
+        - Statement:
+            - Sid: WriteExtractedApplication
+              Effect: Allow
+              Action:
+                - dynamodb:UpdateItem
+              Resource: !GetAtt CandidateProfileTable.Arn
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${CandidateProfileApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  TableName:
+    Value: !Ref CandidateProfileTable

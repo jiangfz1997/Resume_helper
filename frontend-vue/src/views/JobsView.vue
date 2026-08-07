@@ -135,6 +135,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { applicationDataSource } from '../applications/dataSource'
 import { jobDataSource } from '../jobs/dataSource'
 import type { DashboardJob, DashboardJobSummary, DashboardRunSummary, DashboardUserState, JobUserState, JobUserStatus, ScoringQueueSummary, WorkplaceType } from '../jobs/models'
 
@@ -302,6 +303,25 @@ async function toggleStatus(jobId: string, value: Exclude<JobUserStatus, 'new'>)
   await jobDataSource.setJobStatus(jobId, nextStatus)
   markJobViewedLocally(jobId)
   userState.value = { ...userState.value, jobs: userState.value.jobs.map((job) => job.jobId === jobId ? { ...job, status: nextStatus, updatedAt: new Date().toISOString() } : job) }
+  if (nextStatus === 'applied' && selectedJob.value?.jobId === jobId) recordApplication(selectedJob.value)
+}
+
+// Best-effort: a failure here must never block the job-status toggle above,
+// since the application tracker is a separate service from job-discovery.
+async function recordApplication(job: DashboardJob): Promise<void> {
+  try {
+    await applicationDataSource.createFromJob({
+      jobId: job.jobId,
+      sourceUrl: job.primaryListing?.sourceUrl ?? job.primaryListingUrl,
+      applyUrl: job.primaryListing?.applyUrl ?? null,
+      company: job.company,
+      title: job.title,
+      location: job.location,
+      jdText: job.description,
+    })
+  } catch (error) {
+    console.error('failed to record application', error)
+  }
 }
 async function queueScore(jobId: string): Promise<void> {
   queuedJobIds.value = new Set([...queuedJobIds.value, jobId])

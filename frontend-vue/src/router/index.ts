@@ -22,6 +22,11 @@ const router = createRouter({
       meta: { requiresCloudAuth: true },
     },
     {
+      path: '/applications',
+      component: () => import('../views/ApplicationsView.vue'),
+      meta: { requiresCloudAuth: true },
+    },
+    {
       path: '/profile',
       component: () => import('../views/ProfileView.vue'),
       meta: { requiresAuth: true },

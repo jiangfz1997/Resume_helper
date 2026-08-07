@@ -74,6 +74,7 @@ const showLogin = ref(false)
 
 const menuOptions: MenuOption[] = [
   { label: 'Jobs', key: '/jobs' },
+  { label: 'Applications', key: '/applications' },
   { label: 'Job Settings', key: '/job-settings' },
   { label: 'Generate', key: '/generate' },
   { label: 'Profile', key: '/profile' },
@@ -82,7 +83,7 @@ const menuOptions: MenuOption[] = [
   // { label: 'Templates', key: '/templates' },
 ]
 
-const visibleMenuOptions = computed(() => authMode === 'cognito' ? menuOptions.slice(0, 2) : auth.isAuthenticated ? menuOptions : menuOptions.slice(0, 1))
+const visibleMenuOptions = computed(() => authMode === 'cognito' ? menuOptions.slice(0, 3) : auth.isAuthenticated ? menuOptions : menuOptions.slice(0, 1))
 
 const themeOverrides: GlobalThemeOverrides = {
   common: { fontFamilyMono: 'monospace' },
