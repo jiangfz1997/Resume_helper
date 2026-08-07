@@ -204,3 +204,10 @@ Moving these existing resources into a dedicated Discovery stack requires a
 staged CloudFormation retain/import migration. It should not be combined with a
 routine workflow refactor because declaring an existing physical resource in a
 new stack can fail with `AlreadyExists` or cause an unintended replacement.
+
+The first migration guard is already present in `dashboard-api.yaml`: the
+discovery Scheduler role and both crawler schedules use `DeletionPolicy` and
+`UpdateReplacePolicy` set to `Retain`. The stack also outputs the generated
+Scheduler role name needed for a later manual import. These attributes do not
+move or disable resources; they only prevent CloudFormation from deleting them
+when the resources are detached from the Dashboard stack in a later phase.
