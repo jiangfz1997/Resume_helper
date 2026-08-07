@@ -1,6 +1,14 @@
 # Resume Tailoring Assistant
 
-An LLM-powered resume tailoring system built with FastAPI, LangGraph, and Vue 3. The system parses your existing resume from PDF, analyzes job descriptions, and generates a tailored resume draft through a multi-agent pipeline. An interactive chat assistant allows you to refine the result.
+An LLM-powered job discovery and resume tailoring system built with FastAPI,
+LangGraph, Vue 3, and AWS serverless services. It discovers and deduplicates new
+roles, produces profile-specific coarse scores, and turns selected job descriptions
+into tailored resume drafts. An interactive chat assistant supports further refinement.
+
+> **Service availability:** The hosted Job Search service is currently a private,
+> small-scale deployment for invited users only. Public access is disabled to keep
+> third-party crawling, LLM, and AWS usage predictable. The source code remains
+> available for self-hosting and local development.
 
 ## Demo
 
@@ -25,6 +33,12 @@ A job description is analyzed against the stored profile to produce the report a
 
 ## Features
 
+- **Job Discovery Inbox** — Scheduled Workday and JobSpy ingestion with normalization,
+  deduplication, hard filters, run summaries, and source-health visibility
+- **Per-user AI Scoring** — One shared crawl can be scored independently against each
+  user's profile and preferences, either on schedule or on demand
+- **Serverless Dashboard** — Cognito-protected Vue dashboard backed by API Gateway,
+  Lambda, and DynamoDB, with saved, shortlisted, applied, and rejected states
 - **PDF Resume Import** — Upload your resume PDF; a two-phase LLM pipeline extracts and structures your work experience, education, projects, and skills
 - **JD Analysis & Matching** — Paste a job description to get a semantic skill match report with highlighted relevant experiences
 - **AI Resume Generation** — Single-pass LLM tailoring that preserves your actual experience while optimizing keyword coverage
@@ -44,7 +58,9 @@ A job description is analyzed against the stored profile to produce the report a
 | Frontend | Vue 3, Vite, Naive UI, TypeScript |
 | Auth | JWT (python-jose), bcrypt (pwdlib) |
 | PDF Export | Playwright (headless Chromium) |
-| Packaging | Docker Compose; nginx serves the built frontend and proxies the API |
+| Job Discovery | Python, AWS Lambda, EventBridge Scheduler, DynamoDB |
+| Cloud Dashboard | S3, CloudFront, API Gateway, Cognito, AWS SAM |
+| Packaging & CI/CD | Docker Compose, nginx, GitHub Actions with AWS OIDC |
 
 ## Project Structure
 
@@ -72,6 +88,13 @@ app/
 frontend-vue/       # Vue 3 frontend
   Dockerfile        # vite build, served by nginx
   nginx.conf        # SPA fallback plus /api proxy to the API container
+job-discovery/      # Independent serverless ingestion and coarse-scoring service
+  src/job_discovery/ # Domain, sources, filters, scoring, repositories, dashboard
+  lambda_workday/    # Workday crawler Lambda package
+  lambda_jobspy/     # JobSpy crawler Lambda package
+  lambda_dashboard/  # Authenticated dashboard API Lambda
+  lambda_scoring/    # Per-user Gemini coarse-scoring Lambda
+  infra/              # AWS SAM dashboard infrastructure
 agents.yaml         # Model configuration per agent
 init.sql            # Database schema (no migration tool; see below)
 Dockerfile          # API image: Python 3.12 plus Playwright Chromium
@@ -246,6 +269,17 @@ To keep everything local, set `LLM_PROVIDER=ollama` and point `base_url` in
 
 ## Deployment
 
+The repository contains two independently deployable surfaces:
+
+- The resume application runs as the FastAPI/PostgreSQL/Vue stack described below.
+- Job Discovery runs on AWS serverless infrastructure. Relevant changes merged to
+  `main` deploy the crawler and API Lambda packages automatically; the dashboard stack
+  and static site are deployed manually through the **Deploy dashboard** workflow.
+
+Only paths declared in `.github/workflows/*.yml` start automatic jobs. A root-level
+documentation-only change such as `README.md` does not trigger Job Discovery CI or a
+Lambda deployment.
+
 ### Running the whole stack in Docker
 
 The `app` profile adds the API and the frontend to the database service. Without it,
@@ -283,4 +317,14 @@ run the backend outside Docker.
 - Playwright Chromium in the runtime environment for PDF export (the image installs it)
 - `GET /health` is a database-free liveness probe
 
-There is no CI pipeline yet.
+## CI/CD
+
+- **Job discovery CI** tests the service and validates all four Lambda packages for
+  relevant pull-request and branch changes.
+- **Deploy job discovery Lambdas** publishes immutable packages to S3 and updates the
+  four Lambda functions after relevant changes reach `main`.
+- **Deploy dashboard** is intentionally manual; it deploys the SAM stack, builds the Vue
+  application, publishes it to S3, and invalidates CloudFront.
+
+AWS access uses GitHub Actions OIDC, so long-lived AWS access keys are not stored in the
+repository. Provider API keys belong in GitHub environment secrets, never in source.
