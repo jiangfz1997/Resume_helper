@@ -1,4 +1,4 @@
-name: Deploy dashboard and candidate profile
+name: Deploy dashboard API and candidate profile
 
 on:
   workflow_dispatch:
@@ -6,7 +6,6 @@ on:
     branches:
       - main
     paths:
-      - "frontend-vue/**"
       - "job-discovery/infra/dashboard-api.yaml"
       - "candidate-profile/**"
       - ".github/workflows/deploy-dashboard.yml"
@@ -28,8 +27,6 @@ jobs:
       AWS_REGION: ${{ vars.AWS_REGION }}
       LAMBDA_ARTIFACT_BUCKET: ${{ vars.LAMBDA_ARTIFACT_BUCKET }}
       STACK_NAME: ${{ vars.DASHBOARD_STACK_NAME }}
-      WEB_BUCKET: ${{ vars.DASHBOARD_WEB_BUCKET }}
-      DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
       DASHBOARD_ORIGIN: ${{ vars.DASHBOARD_ORIGIN }}
       COGNITO_DOMAIN_PREFIX: ${{ vars.COGNITO_DOMAIN_PREFIX }}
       RECORDS_TABLE_NAME: ${{ vars.RECORDS_TABLE_NAME }}
@@ -78,7 +75,7 @@ jobs:
       - name: Validate deployment configuration
         shell: bash
         run: |
-          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME GEMINI_MODEL GEMINI_API_KEY WORKDAY_FUNCTION_NAME JOBSPY_FUNCTION_NAME CANDIDATE_PROFILE_STACK_NAME CANDIDATE_PROFILE_TABLE_NAME)
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION LAMBDA_ARTIFACT_BUCKET STACK_NAME DASHBOARD_ORIGIN COGNITO_DOMAIN_PREFIX RECORDS_TABLE_NAME LISTINGS_TABLE_NAME GEMINI_MODEL GEMINI_API_KEY WORKDAY_FUNCTION_NAME JOBSPY_FUNCTION_NAME CANDIDATE_PROFILE_STACK_NAME CANDIDATE_PROFILE_TABLE_NAME)
           for name in "${required[@]}"; do
             if [[ -z "${!name}" ]]; then
               echo "Missing GitHub Actions variable: ${name}" >&2
@@ -150,13 +147,9 @@ jobs:
       - name: Read dashboard stack outputs
         shell: bash
         run: |
-          api_url=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
           user_pool_id=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text)
           client_id=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text)
-          cognito_domain=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='CognitoLoginDomain'].OutputValue" --output text)
-          echo "VITE_JOBS_API_URL=${api_url}" >> "$GITHUB_ENV"
-          echo "VITE_COGNITO_CLIENT_ID=${client_id}" >> "$GITHUB_ENV"
-          echo "VITE_COGNITO_DOMAIN=${cognito_domain}" >> "$GITHUB_ENV"
+          echo "DASHBOARD_USER_POOL_CLIENT_ID=${client_id}" >> "$GITHUB_ENV"
           echo "DASHBOARD_USER_POOL_ID=${user_pool_id}" >> "$GITHUB_ENV"
 
       - name: Deploy candidate profile API
@@ -173,7 +166,7 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               UserPoolId="$DASHBOARD_USER_POOL_ID" \
-              UserPoolClientId="$VITE_COGNITO_CLIENT_ID" \
+              UserPoolClientId="$DASHBOARD_USER_POOL_CLIENT_ID" \
               AllowedOrigin="$DASHBOARD_ORIGIN" \
               LambdaArtifactBucket="$LAMBDA_ARTIFACT_BUCKET" \
               ApiCodeKey="$CANDIDATE_PROFILE_API_CODE_KEY" \
@@ -181,32 +174,3 @@ jobs:
               GeminiApiKey="$GEMINI_API_KEY" \
               GeminiModel="$GEMINI_MODEL" \
               TableName="$CANDIDATE_PROFILE_TABLE_NAME"
-
-      - name: Read candidate profile stack outputs
-        shell: bash
-        run: |
-          applications_api_url=$(aws cloudformation describe-stacks --stack-name "$CANDIDATE_PROFILE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
-          echo "VITE_APPLICATIONS_API_URL=${applications_api_url}" >> "$GITHUB_ENV"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend-vue/package-lock.json
-
-      - name: Build dashboard frontend
-        working-directory: frontend-vue
-        env:
-          VITE_JOB_DATA_SOURCE: api
-          VITE_AUTH_MODE: cognito
-          VITE_COGNITO_REDIRECT_URI: ${{ env.DASHBOARD_ORIGIN }}/auth/callback
-          VITE_COGNITO_LOGOUT_URI: ${{ env.DASHBOARD_ORIGIN }}/jobs
-        run: |
-          npm ci
-          npm run build
-
-      - name: Publish dashboard frontend
-        run: |
-          aws s3 sync frontend-vue/dist/ "s3://${WEB_BUCKET}/" --cache-control "no-cache"
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"

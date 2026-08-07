@@ -1,0 +1,102 @@
+name: Deploy dashboard frontend
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend-vue/**"
+      - ".github/workflows/deploy-frontend.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: job-discovery-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      DASHBOARD_STACK_NAME: ${{ vars.DASHBOARD_STACK_NAME }}
+      CANDIDATE_PROFILE_STACK_NAME: ${{ vars.CANDIDATE_PROFILE_STACK_NAME }}
+      WEB_BUCKET: ${{ vars.DASHBOARD_WEB_BUCKET }}
+      DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+      DASHBOARD_ORIGIN: ${{ vars.DASHBOARD_ORIGIN }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION DASHBOARD_STACK_NAME CANDIDATE_PROFILE_STACK_NAME WEB_BUCKET DISTRIBUTION_ID DASHBOARD_ORIGIN)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing GitHub Actions variable: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read backend stack outputs
+        shell: bash
+        run: |
+          read_output() {
+            local stack_name="$1"
+            local output_key="$2"
+            local value
+            value=$(aws cloudformation describe-stacks \
+              --stack-name "$stack_name" \
+              --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue" \
+              --output text)
+            if [[ -z "$value" || "$value" == "None" ]]; then
+              echo "Missing CloudFormation output ${output_key} from ${stack_name}" >&2
+              exit 1
+            fi
+            printf '%s' "$value"
+          }
+
+          jobs_api_url=$(read_output "$DASHBOARD_STACK_NAME" ApiUrl)
+          cognito_client_id=$(read_output "$DASHBOARD_STACK_NAME" UserPoolClientId)
+          cognito_domain=$(read_output "$DASHBOARD_STACK_NAME" CognitoLoginDomain)
+          applications_api_url=$(read_output "$CANDIDATE_PROFILE_STACK_NAME" ApiUrl)
+
+          echo "VITE_JOBS_API_URL=${jobs_api_url}" >> "$GITHUB_ENV"
+          echo "VITE_COGNITO_CLIENT_ID=${cognito_client_id}" >> "$GITHUB_ENV"
+          echo "VITE_COGNITO_DOMAIN=${cognito_domain}" >> "$GITHUB_ENV"
+          echo "VITE_APPLICATIONS_API_URL=${applications_api_url}" >> "$GITHUB_ENV"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend-vue/package-lock.json
+
+      - name: Build dashboard frontend
+        working-directory: frontend-vue
+        env:
+          VITE_JOB_DATA_SOURCE: api
+          VITE_AUTH_MODE: cognito
+          VITE_COGNITO_REDIRECT_URI: ${{ env.DASHBOARD_ORIGIN }}/auth/callback
+          VITE_COGNITO_LOGOUT_URI: ${{ env.DASHBOARD_ORIGIN }}/jobs
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish dashboard frontend
+        run: |
+          aws s3 sync frontend-vue/dist/ "s3://${WEB_BUCKET}/" --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
