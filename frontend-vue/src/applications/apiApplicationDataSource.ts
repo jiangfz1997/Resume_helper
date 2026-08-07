@@ -4,6 +4,7 @@ import type {
   ApplicationStatus,
   CreateApplicationFromJob,
   JobApplication,
+  UpdateApplicationFields,
 } from './models'
 
 interface ApiStatusEvent {
@@ -82,6 +83,19 @@ export class ApiApplicationDataSource implements ApplicationDataSource {
     const updated = await this.request<ApiApplication>(`/applications/${encodeURIComponent(applicationId)}/status`, {
       method: 'PATCH',
       body: JSON.stringify({ status, note: note ?? null }),
+    })
+    return toApplication(updated)
+  }
+
+  async updateFields(applicationId: string, data: UpdateApplicationFields): Promise<JobApplication> {
+    const updated = await this.request<ApiApplication>(`/applications/${encodeURIComponent(applicationId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        company: data.company,
+        title: data.title,
+        location: data.location,
+        notes: data.notes,
+      }),
     })
     return toApplication(updated)
   }
