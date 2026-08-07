@@ -273,8 +273,8 @@ The repository contains two independently deployable surfaces:
 
 - The resume application runs as the FastAPI/PostgreSQL/Vue stack described below.
 - Job Discovery runs on AWS serverless infrastructure. Relevant changes merged to
-  `main` deploy the crawler and API Lambda packages automatically; the dashboard stack
-  and static site are deployed manually through the **Deploy dashboard** workflow.
+  `main` deploy Lambda packages, managed schedules, the dashboard stack, and the static
+  site automatically. The **Deploy dashboard** workflow also supports manual dispatch.
 
 Only paths declared in `.github/workflows/*.yml` start automatic jobs. A root-level
 documentation-only change such as `README.md` does not trigger Job Discovery CI or a
@@ -323,8 +323,9 @@ run the backend outside Docker.
   relevant pull-request and branch changes.
 - **Deploy job discovery Lambdas** publishes immutable packages to S3 and updates the
   four Lambda functions after relevant changes reach `main`.
-- **Deploy dashboard** is intentionally manual; it deploys the SAM stack, builds the Vue
-  application, publishes it to S3, and invalidates CloudFront.
+- **Deploy dashboard** runs for relevant changes on `main` or by manual dispatch; it
+  deploys the SAM stack, builds the Vue application, publishes it to S3, and invalidates
+  CloudFront.
 
 AWS access uses GitHub Actions OIDC, so long-lived AWS access keys are not stored in the
 repository. Provider API keys belong in GitHub environment secrets, never in source.

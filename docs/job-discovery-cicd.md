@@ -41,10 +41,17 @@ schedules, or update function configuration.
 
 ### Dashboard deployment
 
-`.github/workflows/deploy-dashboard.yml` remains manually triggered. It manages
-the SAM stack and the Vue application. Its dashboard Lambda package now uses an
-immutable S3 key passed to CloudFormation, preventing a later SAM deployment
-from restoring an older fixed-key package.
+`.github/workflows/deploy-dashboard.yml` runs automatically when relevant
+infrastructure or frontend changes reach `main`, and remains manually
+dispatchable. It manages the SAM stack, all three schedules, and the Vue
+application. Its dashboard Lambda package uses an immutable S3 key passed to
+CloudFormation, preventing a later SAM deployment from restoring an older
+fixed-key package.
+
+Both production workflows use the `job-discovery-production` concurrency group,
+so a merge that changes runtime code and infrastructure cannot race two Lambda
+updates. Pull requests only run Job discovery CI, including `sam validate`, and
+never connect to AWS.
 
 ## GitHub configuration
 
@@ -145,6 +152,10 @@ same role can be reused initially; splitting infrastructure and code-deployment
 roles can be done later. The SAM deploy role also needs EventBridge Scheduler
 lifecycle permissions and scoped IAM role/`iam:PassRole` permissions for the
 scheduled scoring target.
+
+The same Scheduler permissions cover the managed Workday and JobSpy schedules.
+Their generated execution role can invoke only the two function names supplied
+through `WORKDAY_FUNCTION_NAME` and `JOBSPY_FUNCTION_NAME`.
 
 ## Artifact retention and rollback
 
