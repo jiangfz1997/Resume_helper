@@ -269,12 +269,16 @@ To keep everything local, set `LLM_PROVIDER=ollama` and point `base_url` in
 
 ## Deployment
 
-The repository contains two independently deployable surfaces:
+The repository contains independently deployable surfaces:
 
 - The resume application runs as the FastAPI/PostgreSQL/Vue stack described below.
-- Job Discovery runs on AWS serverless infrastructure. Relevant changes merged to
-  `main` deploy Lambda packages, managed schedules, the dashboard stack, and the static
-  site automatically. The **Deploy dashboard** workflow also supports manual dispatch.
+- Job Discovery crawlers run as two existing AWS Lambda functions.
+- The authenticated dashboard API and personalized scorer run in an AWS SAM stack.
+- Candidate Profile has its own AWS SAM stack.
+- The Vue dashboard is published independently to S3 and CloudFront.
+
+Relevant changes merged to `main` deploy only the affected surface. Every deployment
+workflow also supports manual dispatch.
 
 Only paths declared in `.github/workflows/*.yml` start automatic jobs. A root-level
 documentation-only change such as `README.md` does not trigger Job Discovery CI or a
@@ -321,11 +325,15 @@ run the backend outside Docker.
 
 - **Job discovery CI** tests the service and validates all four Lambda packages for
   relevant pull-request and branch changes.
-- **Deploy job discovery Lambdas** publishes immutable packages to S3 and updates the
-  four Lambda functions after relevant changes reach `main`.
-- **Deploy dashboard** runs for relevant changes on `main` or by manual dispatch; it
-  deploys the SAM stack, builds the Vue application, publishes it to S3, and invalidates
-  CloudFront.
+- **Deploy discovery crawlers** publishes immutable packages and updates only the
+  Workday and JobSpy Lambda functions.
+- **Deploy dashboard API** deploys the authenticated dashboard and personalized-scoring
+  SAM stack. This stack currently also owns the crawler and scoring schedules.
+- **Deploy candidate profile API** deploys the Candidate Profile SAM stack.
+- **Deploy dashboard frontend** builds Vue, publishes it to S3, and invalidates
+  CloudFront after frontend changes.
 
 AWS access uses GitHub Actions OIDC, so long-lived AWS access keys are not stored in the
 repository. Provider API keys belong in GitHub environment secrets, never in source.
+See [`docs/job-discovery-cicd.md`](docs/job-discovery-cicd.md) for workflow ownership,
+trigger paths, variables, and the current infrastructure boundary.

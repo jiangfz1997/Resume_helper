@@ -179,58 +179,22 @@ implements steps 1-2 server-side if the dashboard backend calls into this
 Python package directly rather than re-implementing DynamoDB access; `filter
 by source` and `min_score` are also supported by `JobQuery`.
 
-## 5. EventBridge schedule (configured 2026-08-05, migrated to Scheduler 2026-08-06)
+## 5. EventBridge Scheduler
 
-Two EventBridge Scheduler schedules, `job-discovery-workday-schedule` and
-`job-discovery-jobspy-schedule`, each with a single Lambda target and cron
-`cron(0 10,14,20 * * ? *)` with `ScheduleExpressionTimezone: America/Toronto`
-— always fires at 10:00/14:00/20:00 local Toronto time, self-adjusting across
-DST. Both use a shared IAM role, `job-discovery-scheduler-crawlers`, scoped to
-`lambda:InvokeFunction` on just these two functions. Each target has a
-**Constant (JSON) input** — this is the fixed `ScoringProfile` + search params
-baked in, since a scheduled run has no human to fill in a Test event. This
-profile is duplicated in both targets' JSON, not read from any shared store
-(see open item below: not persisted anywhere else).
+The Dashboard SAM stack defines the Workday and JobSpy schedules in
+`infra/dashboard-api.yaml`. Both use `cron(0 10,14,20 * * ? *)` with
+`ScheduleExpressionTimezone: America/Toronto`, so they fire at
+10:00/14:00/20:00 Toronto time and adjust across DST. Their physical names are
+`job-discovery-workday-managed` and `job-discovery-jobspy-managed`.
 
-These two schedules are not defined in this repo's IaC (they predate it and
-were originally a plain `AWS::Events::Rule`, which is UTC-only and does not
-support a timezone — that limitation is what caused the 2026-08-06 drift this
-migration fixed). The scoring schedule in `infra/dashboard-api.yaml`
-(`ScheduledScoring`, 45 minutes after each crawl) is SAM-managed and was
-updated in the same change to `cron(45 10,14,20 * * ? *)` /
-`America/Toronto` to stay in sync — if the crawl times ever change again,
-update both by hand.
+Each schedule passes `{}` to its crawler. When `USER_DATA_TABLE` is configured,
+the crawler reads the shared `DiscoverySettings` system item from DynamoDB.
+Event fields remain compatibility fallbacks for manual invocations; search
+settings and scoring profiles are no longer duplicated in schedule payloads.
 
-Target: `job-discovery-workday`
-```json
-{
-  "search_term": "Software Engineer",
-  "max_results": 10,
-  "accepted_locations": [],
-  "skills": ["Python", "Java", "AWS"],
-  "target_titles": ["Software Engineer", "QA Engineer"],
-  "location_preference": "Ontario, Canada preferred (Canada-wide acceptable)"
-}
-```
-
-Target: `job-discovery-jobspy`
-```json
-{
-  "search_term": "Software Engineer",
-  "location": "Canada",
-  "hours_old": 24,
-  "max_results": 15,
-  "accepted_locations": [],
-  "sites": ["indeed", "linkedin"],
-  "skills": ["Python", "Java", "AWS"],
-  "target_titles": ["Software Engineer", "QA Engineer"],
-  "location_preference": "Ontario, Canada preferred (Canada-wide acceptable)"
-}
-```
-
-Note `accepted_locations: []` — see `filters.py`'s convention, empty list
-means no hard location filter at all (Canada-wide). `location_preference`
-is soft, only used by Gemini scoring, not by `apply_hard_filters()`.
+The same SAM template owns `ScheduledScoring`, which runs 45 minutes after each
+crawl using `cron(45 10,14,20 * * ? *)` in the same timezone. Old
+console-created schedules must remain disabled to avoid duplicate crawls.
 
 ## 6. Lambda deployment details (for the "old service to cloud" half of this handoff)
 
@@ -240,20 +204,14 @@ is soft, only used by Gemini scoring, not by `apply_hard_filters()`.
   `SOURCE_LOOKUP_TABLE`. Currently pointed at `job-discovery-records` /
   `job-discovery-listings` / `job-discovery-dedup-keys` /
   `job-discovery-source-lookup`.
-- Optional: `GEMINI_API_KEY`, `GEMINI_MODEL` (currently `gemini-3.6-flash`,
-  confirmed working end-to-end on both Lambdas as of 2026-08-05 — a live
-  `job-discovery-workday` run returned 26 scored records, `coarse_score`
-  1-10, `scoring_skipped_reason: null`. Free-tier model names have gone
-  stale within days before, so re-verify if scoring starts failing later).
-  Note `score_eligible_jobs()` scores **every** `eligible` `JobRecord` in
-  the repository each run, not just the current invocation's — the workday
-  run's scores included Indeed/LinkedIn-sourced companies (Stripe, eBay,
-  Scotiabank) written by the other Lambda, confirming both Lambdas share
-  state correctly through the four tables.
+- `USER_DATA_TABLE` enables shared discovery settings and discovery-run reports.
+  Without it, event/default settings are used and run reports are not persisted.
+- Gemini credentials are used by the separate `job-discovery-score` Lambda, not
+  by either crawler.
 - IAM: each Lambda's execution role needs `dynamodb:GetItem`, `PutItem`,
   `UpdateItem`, `Query`, `Scan` on all four tables (inline policy, per-role).
-- No API Gateway in front of either Lambda today. Invocation is
-  console-Test-button (manual) plus the EventBridge schedule above (3x/day).
+- No API Gateway is in front of either crawler Lambda. Invocation is manual or
+  through the SAM-managed EventBridge Scheduler resources above.
   If the dashboard needs on-demand "run now" triggering, that's unbuilt.
 - Event payload shape both Lambdas accept (all fields optional):
   `{"search_term": str, "location": str, "hours_old": int, "max_results": int,
@@ -263,13 +221,9 @@ is soft, only used by Gemini scoring, not by `apply_hard_filters()`.
 
 ## 7. Open items relevant to dashboard/deploy design (not yet resolved)
 
-- **ScoringProfile is not persisted in a shared store.** It's duplicated as
-  literal JSON in two EventBridge targets (section 5) — editing it means
-  editing both rule targets by hand in the console, and it drifts if only
-  one gets updated. If the dashboard wants to let the user edit their
-  profile, that's a new write path (e.g. move the profile to S3/DynamoDB and
-  have both Lambdas read it, replacing the EventBridge constant-JSON
-  approach) with no existing backend support yet.
+- Discovery settings are stored once in the dashboard user-data table and
+  shared by both crawlers. Personalized scoring profiles are stored per Cognito
+  user and consumed only by `job-discovery-score`.
 - `user_status` on `JobRecord` is a free string, not an enum, and nothing
   writes to it besides the `"new"` default — this is presumably the field
   a dashboard's "mark as applied" action should update, but there's no
