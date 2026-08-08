@@ -14,7 +14,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: job-discovery-production
+  group: job-discovery-production-discovery-infra
   cancel-in-progress: false
 
 jobs:
