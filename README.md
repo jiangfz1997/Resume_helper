@@ -94,7 +94,7 @@ job-discovery/      # Independent serverless ingestion and coarse-scoring servic
   lambda_jobspy/     # JobSpy crawler Lambda package
   lambda_dashboard/  # Authenticated dashboard API Lambda
   lambda_scoring/    # Per-user Gemini coarse-scoring Lambda
-  infra/              # AWS SAM dashboard infrastructure
+  infra/              # Dashboard SAM and Discovery CloudFormation infrastructure
 agents.yaml         # Model configuration per agent
 init.sql            # Database schema (no migration tool; see below)
 Dockerfile          # API image: Python 3.12 plus Playwright Chromium
