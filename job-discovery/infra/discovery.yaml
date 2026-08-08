@@ -45,7 +45,7 @@ Resources:
       Name: job-discovery-workday-managed
       GroupName: default
       Description: Run the shared Workday discovery crawler three times per Toronto day
-      ScheduleExpression: cron(0 10,14,20 * * ? *)
+      ScheduleExpression: cron(0 10 * * ? *)
       ScheduleExpressionTimezone: America/Toronto
       FlexibleTimeWindow:
         Mode: 'OFF'
