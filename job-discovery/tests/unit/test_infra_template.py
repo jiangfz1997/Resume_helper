@@ -22,6 +22,6 @@ def test_scoring_schedule_runs_after_discovery() -> None:
     resources = _template()["Resources"]
     properties = resources["PersonalizedScoringFunction"]["Properties"]["Events"]["ScheduledScoring"]["Properties"]
 
-    assert properties["ScheduleExpression"] == "cron(45 10,14,20 * * ? *)"
+    assert properties["ScheduleExpression"] == "cron(45 10 * * ? *)"
     assert properties["ScheduleExpressionTimezone"] == "America/Toronto"
-    assert properties["Input"] == '{"limit":20}'
+    assert properties["Input"] == '{"limit":30}'

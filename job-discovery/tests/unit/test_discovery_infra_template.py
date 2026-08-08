@@ -36,7 +36,7 @@ def test_discovery_schedules_match_retained_resources() -> None:
 
         assert properties["Name"] == schedule_name
         assert properties["GroupName"] == "default"
-        assert properties["ScheduleExpression"] == "cron(0 10,14,20 * * ? *)"
+        assert properties["ScheduleExpression"] == "cron(0 10 * * ? *)"
         assert properties["ScheduleExpressionTimezone"] == "America/Toronto"
         assert properties["State"] == "ENABLED"
         assert target["Arn"].endswith(f"function:{function_parameter}")
