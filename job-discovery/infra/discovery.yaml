@@ -78,11 +78,3 @@ Resources:
         RetryPolicy:
           MaximumEventAgeInSeconds: 3600
           MaximumRetryAttempts: 1
-
-Outputs:
-  SchedulerRoleName:
-    Value: !Ref DiscoverySchedulerRole
-  WorkdayDiscoveryScheduleName:
-    Value: !Ref WorkdayDiscoverySchedule
-  JobSpyDiscoveryScheduleName:
-    Value: !Ref JobSpyDiscoverySchedule

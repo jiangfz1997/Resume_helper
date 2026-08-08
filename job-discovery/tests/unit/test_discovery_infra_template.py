@@ -50,3 +50,7 @@ def test_scheduler_role_name_is_supplied_for_import() -> None:
 
     assert template["Parameters"]["SchedulerRoleName"]["Type"] == "String"
     assert role["Properties"]["RoleName"] == "SchedulerRoleName"
+
+
+def test_initial_import_template_does_not_declare_outputs() -> None:
+    assert "Outputs" not in _template()
