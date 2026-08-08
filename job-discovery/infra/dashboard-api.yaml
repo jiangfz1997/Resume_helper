@@ -155,7 +155,7 @@ Resources:
       Runtime: python3.13
       Architectures:
         - x86_64
-      MemorySize: 256
+      MemorySize: 1024
       Timeout: 10
       Environment:
         Variables:
