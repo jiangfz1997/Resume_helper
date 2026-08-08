@@ -226,4 +226,7 @@ physical IAM role name. Keep the two function-name parameters at their defaults.
 The import must contain all three resources and must not create, delete, or
 change their configuration. After it reaches `IMPORT_COMPLETE`, run drift
 detection and confirm both schedules remain enabled. Automatic deployment of
-this template is deliberately deferred until the import succeeds.
+this template is deliberately deferred until the import succeeds. The initial
+template intentionally has no `Outputs` section because CloudFormation import
+change sets cannot add or modify stack outputs. Outputs can be added later in a
+normal stack update if another service needs them.
