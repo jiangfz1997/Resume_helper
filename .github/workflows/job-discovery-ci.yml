@@ -6,6 +6,7 @@ on:
       - "job-discovery/**"
       - ".github/workflows/job-discovery-ci.yml"
       - ".github/workflows/deploy-discovery.yml"
+      - ".github/workflows/deploy-discovery-infra.yml"
   push:
     branches-ignore:
       - main
@@ -13,6 +14,7 @@ on:
       - "job-discovery/**"
       - ".github/workflows/job-discovery-ci.yml"
       - ".github/workflows/deploy-discovery.yml"
+      - ".github/workflows/deploy-discovery-infra.yml"
   workflow_dispatch:
 
 permissions:

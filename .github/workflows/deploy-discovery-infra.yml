@@ -1,0 +1,100 @@
+name: Deploy discovery infrastructure
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "job-discovery/infra/discovery.yaml"
+      - ".github/workflows/deploy-discovery-infra.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: job-discovery-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK_NAME: job-discovery
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          required=(AWS_DEPLOY_ROLE_ARN AWS_REGION STACK_NAME)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing deployment setting: ${name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read imported stack parameters
+        shell: bash
+        run: |
+          read_parameter() {
+            local parameter_key="$1"
+            aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --query "Stacks[0].Parameters[?ParameterKey=='${parameter_key}'].ParameterValue | [0]" \
+              --output text
+          }
+
+          scheduler_role_name=$(read_parameter SchedulerRoleName)
+          workday_function_name=$(read_parameter WorkdayFunctionName)
+          jobspy_function_name=$(read_parameter JobSpyFunctionName)
+
+          for value in "$scheduler_role_name" "$workday_function_name" "$jobspy_function_name"; do
+            if [[ -z "$value" || "$value" == "None" ]]; then
+              echo "Imported Discovery stack is missing a required parameter" >&2
+              exit 1
+            fi
+          done
+
+          {
+            echo "SCHEDULER_ROLE_NAME=${scheduler_role_name}"
+            echo "WORKDAY_FUNCTION_NAME=${workday_function_name}"
+            echo "JOBSPY_FUNCTION_NAME=${jobspy_function_name}"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy Discovery stack
+        run: |
+          aws cloudformation deploy \
+            --template-file job-discovery/infra/discovery.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              SchedulerRoleName="$SCHEDULER_ROLE_NAME" \
+              WorkdayFunctionName="$WORKDAY_FUNCTION_NAME" \
+              JobSpyFunctionName="$JOBSPY_FUNCTION_NAME"
+
+      - name: Write deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## Discovery infrastructure deployment"
+            echo
+            echo "- Stack: \`${STACK_NAME}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Workday schedule: \`job-discovery-workday-managed\`"
+            echo "- JobSpy schedule: \`job-discovery-jobspy-managed\`"
+          } >> "$GITHUB_STEP_SUMMARY"
