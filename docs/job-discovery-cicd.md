@@ -11,7 +11,7 @@ stack.
 |---|---|---|
 | `job-discovery-ci.yml` | Tests, package builds, SAM validation | None |
 | `deploy-discovery.yml` | Workday and JobSpy Lambda code | S3 artifacts and Lambda code updates |
-| `deploy-dashboard.yml` | Dashboard API, personalized scorer, Cognito, user-data table, and schedules | SAM/CloudFormation deployment |
+| `deploy-dashboard.yml` | Dashboard API, personalized scorer, Cognito, user-data table, and scoring schedule | SAM/CloudFormation deployment |
 | `deploy-candidate-profile.yml` | Candidate Profile API, extraction worker, and profile table | SAM/CloudFormation deployment |
 | `deploy-frontend.yml` | Vue build in S3 and CloudFront cache | S3 website and CloudFront invalidation |
 
@@ -61,10 +61,9 @@ dispatch. It builds two packages and deploys `infra/dashboard-api.yaml`:
 - `job-discovery-score`
 
 The SAM stack also owns Cognito, the retained dashboard user-data table, the
-HTTP API, the personalized-scoring schedule, and the Workday/JobSpy crawler
-schedules. The crawler Lambda functions and four shared crawler DynamoDB tables
-already existed before this stack and are referenced by name; this stack does
-not create or update their code.
+HTTP API, and the personalized-scoring schedule. The crawler Lambda functions,
+crawler schedules, Scheduler role, and four shared crawler DynamoDB tables are
+outside this stack.
 
 ### Candidate Profile deployment
 
@@ -107,8 +106,6 @@ a secret.
 - `RECORDS_TABLE_NAME`
 - `LISTINGS_TABLE_NAME`
 - `GEMINI_MODEL`
-- `WORKDAY_FUNCTION_NAME`
-- `JOBSPY_FUNCTION_NAME`
 
 ### Candidate Profile variables
 
@@ -198,16 +195,18 @@ CloudFormation stacks:
   directly by `deploy-discovery.yml`.
 - The four shared crawler DynamoDB tables remain external resources referenced
   by name.
-- Crawler and scoring schedules remain managed by the Dashboard SAM stack.
+- The scoring schedule remains managed by the Dashboard SAM stack.
+- The retained crawler schedules and Scheduler role are temporarily unmanaged
+  while they wait to be imported into the dedicated Discovery stack.
 
 Moving these existing resources into a dedicated Discovery stack requires a
 staged CloudFormation retain/import migration. It should not be combined with a
 routine workflow refactor because declaring an existing physical resource in a
 new stack can fail with `AlreadyExists` or cause an unintended replacement.
 
-The first migration guard is already present in `dashboard-api.yaml`: the
-discovery Scheduler role and both crawler schedules use `DeletionPolicy` and
-`UpdateReplacePolicy` set to `Retain`. The stack also outputs the generated
-Scheduler role name needed for a later manual import. These attributes do not
-move or disable resources; they only prevent CloudFormation from deleting them
-when the resources are detached from the Dashboard stack in a later phase.
+Before detachment, the Dashboard stack applied `DeletionPolicy` and
+`UpdateReplacePolicy` set to `Retain` to the discovery Scheduler role and both
+crawler schedules. Removing them from `dashboard-api.yaml` therefore releases
+CloudFormation ownership without deleting or disabling the physical resources.
+The next migration phase imports those retained resources into the dedicated
+Discovery stack.

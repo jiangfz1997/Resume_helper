@@ -10,29 +10,12 @@ def _template() -> dict[str, object]:
     return yaml.load(TEMPLATE_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
-def test_discovery_schedules_invoke_existing_crawlers_in_toronto_time() -> None:
+def test_dashboard_stack_does_not_own_discovery_schedules() -> None:
     resources = _template()["Resources"]
 
-    expected_targets = {
-        "WorkdayDiscoverySchedule": "${WorkdayFunctionName}",
-        "JobSpyDiscoverySchedule": "${JobSpyFunctionName}",
-    }
-    for logical_id, function_parameter in expected_targets.items():
-        schedule = resources[logical_id]
-        properties = schedule["Properties"]
-        target = properties["Target"]
-
-        assert schedule["Type"] == "AWS::Scheduler::Schedule"
-        assert properties["ScheduleExpression"] == "cron(0 10,14,20 * * ? *)"
-        assert properties["ScheduleExpressionTimezone"] == "America/Toronto"
-        assert properties["FlexibleTimeWindow"] == {"Mode": "OFF"}
-        assert properties["State"] == "ENABLED"
-        assert target["Arn"].endswith(f"function:{function_parameter}")
-        assert target["Input"] == "{}"
-        assert target["RetryPolicy"] == {
-            "MaximumEventAgeInSeconds": "3600",
-            "MaximumRetryAttempts": "1",
-        }
+    assert "DiscoverySchedulerRole" not in resources
+    assert "WorkdayDiscoverySchedule" not in resources
+    assert "JobSpyDiscoverySchedule" not in resources
 
 
 def test_scoring_schedule_runs_after_discovery() -> None:
@@ -42,35 +25,3 @@ def test_scoring_schedule_runs_after_discovery() -> None:
     assert properties["ScheduleExpression"] == "cron(45 10,14,20 * * ? *)"
     assert properties["ScheduleExpressionTimezone"] == "America/Toronto"
     assert properties["Input"] == '{"limit":20}'
-
-
-def test_scheduler_role_can_only_invoke_configured_crawlers() -> None:
-    resources = _template()["Resources"]
-    statements = resources["DiscoverySchedulerRole"]["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
-
-    assert statements == [
-        {
-            "Effect": "Allow",
-            "Action": "lambda:InvokeFunction",
-            "Resource": [
-                "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${WorkdayFunctionName}",
-                "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${JobSpyFunctionName}",
-            ],
-        }
-    ]
-
-
-def test_discovery_scheduler_resources_are_retained_for_stack_migration() -> None:
-    resources = _template()["Resources"]
-
-    for logical_id in (
-        "DiscoverySchedulerRole",
-        "WorkdayDiscoverySchedule",
-        "JobSpyDiscoverySchedule",
-    ):
-        resource = resources[logical_id]
-        assert resource["DeletionPolicy"] == "Retain"
-        assert resource["UpdateReplacePolicy"] == "Retain"
-
-    outputs = _template()["Outputs"]
-    assert outputs["DiscoverySchedulerRoleName"]["Value"] == "DiscoverySchedulerRole"
