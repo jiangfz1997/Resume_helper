@@ -66,17 +66,19 @@ untrusted users.
 
 ## Scheduling and capacity
 
-The dashboard SAM stack owns all three schedules. Workday and JobSpy run at
-10:00, 14:00, and 20:00 in `America/Toronto`; personalized scoring follows at
-10:45, 14:45, and 20:45. EventBridge Scheduler applies daylight-saving changes
-automatically. Each scoring invocation loads at most 20 eligible jobs and
-evaluates them for every active profile.
+Workday and JobSpy run at 10:00, 14:00, and 20:00 in `America/Toronto`;
+personalized scoring follows at 10:45, 14:45, and 20:45. EventBridge Scheduler
+applies daylight-saving changes automatically. The Dashboard stack owns only
+the scoring schedule. The retained crawler schedules and invocation role are
+temporarily unmanaged while they wait for import into the Discovery stack.
+Each scoring invocation loads at most 20 eligible jobs and evaluates them for
+every active profile.
 This conservative batch size leaves retry headroom inside Lambda's 15-minute
 maximum. Repeated runs skip unchanged `(user, job, profile, prompt)` versions.
 
 The crawler schedules target the existing `job-discovery-workday` and
-`job-discovery-jobspy` functions. CloudFormation manages their invocation role
-and schedules, but intentionally does not replace or recreate those Lambdas.
+`job-discovery-jobspy` functions. The dedicated Discovery stack will manage the
+invocation role and schedules without replacing or recreating those Lambdas.
 
 ## Required runtime configuration
 
@@ -100,11 +102,10 @@ The dashboard derives lifecycle from the newest listing `last_seen_at`: less
 than 7 days is active, 7-29 days is stale, and 30 days or more is archived.
 This is a reversible display state; no DynamoDB job is deleted.
 
-The direct Lambda code-deployment workflow additionally requires GitHub
-variable `SCORING_FUNCTION_NAME=job-discovery-score`. Run the dashboard SAM
-deployment once before enabling the direct workflow for the new function.
+The crawler deployment workflow requires `WORKDAY_FUNCTION_NAME` and
+`JOBSPY_FUNCTION_NAME`. The scoring function remains SAM-managed and does not
+use a direct-deployment function-name variable.
 
-Before the first deployment that creates the managed crawler schedules, disable
-the legacy console-created EventBridge schedules. The managed resources use the
-names `job-discovery-workday-managed` and `job-discovery-jobspy-managed`; keeping
-the legacy schedules enabled would invoke each crawler twice.
+The retained schedules use the names `job-discovery-workday-managed` and
+`job-discovery-jobspy-managed`. Do not create another set while the retained
+resources wait for import, or each crawler will be invoked twice.
