@@ -1,6 +1,6 @@
 # Job Discovery CI/CD
 
-Job Discovery uses one validation workflow and four production deployment
+Job Discovery uses one validation workflow and five production deployment
 workflows. Deployments are split by runtime ownership so a frontend change does
 not rebuild Lambda packages and a crawler change does not redeploy the dashboard
 stack.
@@ -11,11 +11,12 @@ stack.
 |---|---|---|
 | `job-discovery-ci.yml` | Tests, package builds, SAM validation | None |
 | `deploy-discovery.yml` | Workday and JobSpy Lambda code | S3 artifacts and Lambda code updates |
+| `deploy-discovery-infra.yml` | Crawler schedules and Scheduler invocation role | CloudFormation deployment |
 | `deploy-dashboard.yml` | Dashboard API, personalized scorer, Cognito, user-data table, and scoring schedule | SAM/CloudFormation deployment |
 | `deploy-candidate-profile.yml` | Candidate Profile API, extraction worker, and profile table | SAM/CloudFormation deployment |
 | `deploy-frontend.yml` | Vue build in S3 and CloudFront cache | S3 website and CloudFront invalidation |
 
-All four production workflows use the `job-discovery-production` concurrency
+All five production workflows use the `job-discovery-production` concurrency
 group with cancellation disabled. Related deployments can queue, but they cannot
 modify production concurrently.
 
@@ -50,6 +51,15 @@ change DynamoDB tables, or change schedules.
 Crawler triggers are intentionally narrower than `job-discovery/src/**`.
 Changes to shared domain, repository, source, ingest, and run-report models
 redeploy the crawlers. Dashboard-only and scoring-only source changes do not.
+
+### Discovery infrastructure deployment
+
+`.github/workflows/deploy-discovery-infra.yml` runs only when
+`infra/discovery.yaml` or the workflow itself reaches `main`, or by manual
+dispatch. It updates the already imported `job-discovery` CloudFormation stack
+and never packages or updates crawler Lambda code. The stable stack name lives
+in the workflow; the imported role and function names are read from the stack's
+existing parameters, so no additional GitHub variables are required.
 
 ### Dashboard API deployment
 
@@ -172,7 +182,7 @@ artifact prefix, plus `lambda:UpdateFunctionCode`, `lambda:GetFunction`, and
 }
 ```
 
-The SAM workflows also need their existing scoped CloudFormation, Lambda, API
+The infrastructure workflows also need their existing scoped CloudFormation, Lambda, API
 Gateway, Cognito, IAM, S3, EventBridge Scheduler, and DynamoDB permissions. The
 frontend workflow needs website-bucket writes and CloudFront invalidation. The
 same OIDC role can be reused initially; separate deployment roles can be added
@@ -188,32 +198,25 @@ infrastructure remain consistent.
 
 ## Current infrastructure boundary
 
-The workflow split does not migrate existing AWS resources between
-CloudFormation stacks:
-
 - Workday and JobSpy Lambda functions remain pre-existing resources updated
   directly by `deploy-discovery.yml`.
 - The four shared crawler DynamoDB tables remain external resources referenced
   by name.
 - The scoring schedule remains managed by the Dashboard SAM stack.
-- The retained crawler schedules and Scheduler role are temporarily unmanaged
-  while they wait to be imported into the dedicated Discovery stack.
+- The crawler schedules and Scheduler invocation role are managed by the
+  dedicated `job-discovery` CloudFormation stack.
 
-Moving these existing resources into a dedicated Discovery stack requires a
-staged CloudFormation retain/import migration. It should not be combined with a
-routine workflow refactor because declaring an existing physical resource in a
-new stack can fail with `AlreadyExists` or cause an unintended replacement.
+### Discovery stack migration record
 
-Before detachment, the Dashboard stack applied `DeletionPolicy` and
+The existing resources moved through a staged retain/import migration. Before
+detachment, the Dashboard stack applied `DeletionPolicy` and
 `UpdateReplacePolicy` set to `Retain` to the discovery Scheduler role and both
 crawler schedules. Removing them from `dashboard-api.yaml` therefore releases
 CloudFormation ownership without deleting or disabling the physical resources.
 
-`infra/discovery.yaml` is the target template for the dedicated Discovery
-stack. Its first deployment must be a CloudFormation resource import, not a
-normal create operation. In the CloudFormation console, choose **Create stack**,
-then **With existing resources (import resources)**, and upload the template.
-Use these resource identifiers:
+`infra/discovery.yaml` is the template for the dedicated Discovery stack. Its
+first deployment was a CloudFormation resource import rather than a normal
+create operation. The retained resources were imported with these identifiers:
 
 | Logical ID | Identifier | Existing value |
 |---|---|---|
@@ -221,12 +224,19 @@ Use these resource identifiers:
 | `WorkdayDiscoverySchedule` | `Name` | `job-discovery-workday-managed` |
 | `JobSpyDiscoverySchedule` | `Name` | `job-discovery-jobspy-managed` |
 
-Set stack name `job-discovery` and parameter `SchedulerRoleName` to that same
-physical IAM role name. Keep the two function-name parameters at their defaults.
-The import must contain all three resources and must not create, delete, or
-change their configuration. After it reaches `IMPORT_COMPLETE`, run drift
-detection and confirm both schedules remain enabled. Automatic deployment of
-this template is deliberately deferred until the import succeeds. The initial
-template intentionally has no `Outputs` section because CloudFormation import
-change sets cannot add or modify stack outputs. Outputs can be added later in a
-normal stack update if another service needs them.
+The stack is named `job-discovery` and reached `IMPORT_COMPLETE` with drift
+status `IN_SYNC`. The template intentionally has no `Outputs` section because
+CloudFormation import change sets cannot add or modify stack outputs. Outputs
+can be added later in a normal stack update if another service needs them.
+
+The GitHub OIDC deployment policy must allow the existing CloudFormation
+change-set actions for both `stack/job-dashboard/*` and
+`stack/job-discovery/*`. The existing `role/job-dashboard-*` IAM scope and
+`schedule/default/*` Scheduler scope already cover the imported resources.
+For the current account, add the following stack ARN beside the existing
+Dashboard stack ARN in `ManageDashboardCloudFormationStack`; keep the existing
+change-set ARN and action list unchanged:
+
+```text
+arn:aws:cloudformation:us-east-1:492832370104:stack/job-discovery/*
+```
