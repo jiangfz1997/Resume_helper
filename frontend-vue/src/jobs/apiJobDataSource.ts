@@ -1,4 +1,5 @@
 import type {
+  DashboardBootstrap,
   DashboardJob,
   DashboardJobSummary,
   DashboardRunSummary,
@@ -66,12 +67,28 @@ interface ApiJobPage {
   total: number
 }
 
+interface ApiRunSummary {
+  run_id: string; discovered_at: string; new_jobs_count: number; observed_count: number
+  eligible_count: number; review_count: number; excluded_count: number; error_count: number
+  sources: string[]; status: string
+}
+
 interface ApiRunPage {
-  items: Array<{
-    run_id: string; discovered_at: string; new_jobs_count: number; observed_count: number
-    eligible_count: number; review_count: number; excluded_count: number; error_count: number
-    sources: string[]; status: string
-  }>
+  items: ApiRunSummary[]
+}
+
+interface ApiScoringQueue {
+  eligible_total: number; scored_current: number; pending: number
+  queued: number; failed: number; archived_skipped: number
+}
+
+interface ApiBootstrap {
+  schema_version: string
+  jobs: ApiJobPage
+  runs: ApiRunPage
+  user_state: ApiUserState
+  scoring_profile: ApiScoringProfile | null
+  scoring_queue: ApiScoringQueue
 }
 
 interface ApiUserState {
@@ -97,6 +114,28 @@ interface ApiUserState {
 export class ApiJobDataSource implements JobDataSource {
   constructor(private readonly baseUrl: string, private readonly tokenProvider: () => string | null) {}
 
+  async getBootstrap(): Promise<DashboardBootstrap> {
+    try {
+      const payload = await this.request<ApiBootstrap>('/bootstrap?limit=500')
+      return {
+        jobs: payload.jobs.items.map(toSummary),
+        runs: payload.runs.items.map(toRunSummary),
+        userState: toUserState(payload.user_state),
+        scoringProfile: payload.scoring_profile ? toScoringProfile(payload.scoring_profile) : emptyScoringProfile(),
+        scoringQueue: toScoringQueue(payload.scoring_queue),
+      }
+    } catch (error) {
+      // Frontend and API deploy as separate workflows in one concurrency
+      // group, so a frontend that lands first would 404 here and fail the
+      // whole first paint. Drop this fallback once /bootstrap is live.
+      if (!(error instanceof JobApiError) || error.status !== 404) throw error
+      const [jobs, runs, userState, scoringProfile, scoringQueue] = await Promise.all([
+        this.listJobs(), this.listRuns(), this.getUserState(), this.getScoringProfile(), this.getScoringQueue(),
+      ])
+      return { jobs, runs, userState, scoringProfile, scoringQueue }
+    }
+  }
+
   async listJobs(): Promise<DashboardJobSummary[]> {
     const page = await this.request<ApiJobPage>('/jobs?limit=500')
     return page.items.map(toSummary)
@@ -114,32 +153,11 @@ export class ApiJobDataSource implements JobDataSource {
 
   async listRuns(): Promise<DashboardRunSummary[]> {
     const page = await this.request<ApiRunPage>('/runs')
-    return page.items.map((run) => ({
-      runId: run.run_id,
-      discoveredAt: run.discovered_at,
-      newJobsCount: run.new_jobs_count,
-      observedCount: run.observed_count,
-      eligibleCount: run.eligible_count,
-      reviewCount: run.review_count,
-      excludedCount: run.excluded_count,
-      errorCount: run.error_count,
-      sources: run.sources,
-      status: run.status,
-    }))
+    return page.items.map(toRunSummary)
   }
 
   async getScoringQueue(): Promise<ScoringQueueSummary> {
-    const queue = await this.request<{
-      eligible_total: number; scored_current: number; pending: number; queued: number; failed: number; archived_skipped: number
-    }>('/scoring/queue')
-    return {
-      eligibleTotal: queue.eligible_total,
-      scoredCurrent: queue.scored_current,
-      pending: queue.pending,
-      queued: queue.queued,
-      failed: queue.failed,
-      archivedSkipped: queue.archived_skipped,
-    }
+    return toScoringQueue(await this.request<ApiScoringQueue>('/scoring/queue'))
   }
 
   async scoreJob(jobId: string): Promise<void> {
@@ -147,26 +165,7 @@ export class ApiJobDataSource implements JobDataSource {
   }
 
   async getUserState(): Promise<DashboardUserState> {
-    const state = await this.request<ApiUserState>('/user-state')
-    return {
-      jobs: state.jobs.map((job) => ({
-        jobId: job.job_id,
-        status: job.status,
-        firstViewedAt: job.first_viewed_at,
-        lastViewedAt: job.last_viewed_at,
-        updatedAt: job.updated_at,
-        coarseScore: job.coarse_score,
-        coarseScoreReasoning: job.coarse_score_reasoning,
-        scoreModel: job.score_model,
-        scoreVersion: job.score_version,
-        profileVersion: job.profile_version,
-        scoredAt: job.scored_at,
-        scoringStatus: job.scoring_status,
-        scoringProfileVersion: job.scoring_profile_version,
-        scoreError: job.score_error,
-      })),
-      runs: state.runs.map((run) => ({ runId: run.run_id, viewedAt: run.viewed_at })),
-    }
+    return toUserState(await this.request<ApiUserState>('/user-state'))
   }
 
   async markJobViewed(jobId: string): Promise<void> {
@@ -291,6 +290,54 @@ function toDiscoverySettings(settings: ApiDiscoverySettings): DiscoverySettings 
 class JobApiError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message)
+  }
+}
+
+function toRunSummary(run: ApiRunSummary): DashboardRunSummary {
+  return {
+    runId: run.run_id,
+    discoveredAt: run.discovered_at,
+    newJobsCount: run.new_jobs_count,
+    observedCount: run.observed_count,
+    eligibleCount: run.eligible_count,
+    reviewCount: run.review_count,
+    excludedCount: run.excluded_count,
+    errorCount: run.error_count,
+    sources: run.sources,
+    status: run.status,
+  }
+}
+
+function toScoringQueue(queue: ApiScoringQueue): ScoringQueueSummary {
+  return {
+    eligibleTotal: queue.eligible_total,
+    scoredCurrent: queue.scored_current,
+    pending: queue.pending,
+    queued: queue.queued,
+    failed: queue.failed,
+    archivedSkipped: queue.archived_skipped,
+  }
+}
+
+function toUserState(state: ApiUserState): DashboardUserState {
+  return {
+    jobs: state.jobs.map((job) => ({
+      jobId: job.job_id,
+      status: job.status,
+      firstViewedAt: job.first_viewed_at,
+      lastViewedAt: job.last_viewed_at,
+      updatedAt: job.updated_at,
+      coarseScore: job.coarse_score,
+      coarseScoreReasoning: job.coarse_score_reasoning,
+      scoreModel: job.score_model,
+      scoreVersion: job.score_version,
+      profileVersion: job.profile_version,
+      scoredAt: job.scored_at,
+      scoringStatus: job.scoring_status,
+      scoringProfileVersion: job.scoring_profile_version,
+      scoreError: job.score_error,
+    })),
+    runs: state.runs.map((run) => ({ runId: run.run_id, viewedAt: run.viewed_at })),
   }
 }
 

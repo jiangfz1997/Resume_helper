@@ -4,8 +4,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from job_discovery.dashboard.interfaces import DashboardJobReader
+from job_discovery.dashboard.interfaces import DashboardJobReader, DashboardUserStateRepository
 from job_discovery.dashboard.models import (
+    DashboardBootstrap,
     DashboardJobDetail,
     DashboardJobPage,
     DashboardJobQuery,
@@ -141,6 +142,28 @@ def get_scoring_queue(
         queued=len(unscored & queued),
         failed=len(unscored & failed),
         archived_skipped=len(archived),
+    )
+
+
+def get_dashboard_bootstrap(
+    reader: DashboardJobReader,
+    state_repository: DashboardUserStateRepository,
+    user_id: str,
+    query: DashboardJobQuery,
+) -> DashboardBootstrap:
+    """Reads the user snapshot and scoring profile once each and shares them
+    across the pieces that need them, so a page load costs one scan of each
+    table rather than one per concurrent request."""
+    snapshot = state_repository.get_snapshot(user_id)
+    profile = state_repository.get_scoring_profile(user_id)
+    return DashboardBootstrap(
+        jobs=list_dashboard_jobs(reader, query),
+        runs=list_dashboard_runs(reader, state_repository.list_discovery_runs()),
+        user_state=snapshot,
+        scoring_profile=profile,
+        scoring_queue=get_scoring_queue(
+            reader, snapshot.jobs, profile.profile_version if profile else None
+        ),
     )
 
 

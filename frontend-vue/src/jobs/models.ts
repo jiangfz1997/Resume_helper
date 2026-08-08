@@ -144,7 +144,16 @@ export interface DashboardJob extends DashboardJobSummary, JobRecord {
   primaryListing: JobListing | null
 }
 
+export interface DashboardBootstrap {
+  jobs: DashboardJobSummary[]
+  runs: DashboardRunSummary[]
+  userState: DashboardUserState
+  scoringProfile: ScoringProfileSettings
+  scoringQueue: ScoringQueueSummary
+}
+
 export interface JobDataSource {
+  getBootstrap(): Promise<DashboardBootstrap>
   listJobs(): Promise<DashboardJobSummary[]>
   getJob(jobId: string): Promise<DashboardJob | null>
   listRuns(): Promise<DashboardRunSummary[]>

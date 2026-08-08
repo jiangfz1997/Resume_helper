@@ -15,6 +15,7 @@ from job_discovery.domain.models import (
     SourceName,
     WorkplaceType,
 )
+from job_discovery.domain.settings import UserScoringProfile
 
 
 class DashboardJobQuery(BaseModel):
@@ -162,3 +163,22 @@ class DashboardUserStateSnapshot(BaseModel):
 
 class UpdateJobStateRequest(BaseModel):
     status: DashboardJobUserStatus
+
+
+class DashboardBootstrap(BaseModel):
+    """Everything the jobs view needs for a first paint, in one response.
+
+    The five calls it replaces were issued concurrently, so they fanned out
+    across as many Lambda instances -- each with its own cold
+    CachingDashboardJobReader. The table scans therefore ran up to four
+    times per page load and the cache never helped the first paint. Serving
+    them from one invocation also collapses the duplicated user-state and
+    scoring-profile reads that /user-state, /profile/scoring and
+    /scoring/queue each made separately."""
+
+    schema_version: str = "job-dashboard-bootstrap.v1"
+    jobs: DashboardJobPage
+    runs: DashboardRunPage
+    user_state: DashboardUserStateSnapshot
+    scoring_profile: UserScoringProfile | None = None
+    scoring_queue: DashboardScoringQueue

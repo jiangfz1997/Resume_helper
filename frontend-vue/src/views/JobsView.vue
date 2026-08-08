@@ -205,18 +205,12 @@ const statusTabs = computed(() => {
 
 onMounted(async () => {
   try {
-    const [loadedJobs, loadedRuns, loadedState, loadedProfile, loadedQueue] = await Promise.all([
-      jobDataSource.listJobs(),
-      jobDataSource.listRuns(),
-      jobDataSource.getUserState(),
-      jobDataSource.getScoringProfile(),
-      jobDataSource.getScoringQueue(),
-    ])
-    jobs.value = loadedJobs
-    runs.value = loadedRuns
-    userState.value = loadedState
-    currentProfileVersion.value = loadedProfile.profileVersion
-    scoringQueue.value = loadedQueue
+    const bootstrap = await jobDataSource.getBootstrap()
+    jobs.value = bootstrap.jobs
+    runs.value = bootstrap.runs
+    userState.value = bootstrap.userState
+    currentProfileVersion.value = bootstrap.scoringProfile.profileVersion
+    scoringQueue.value = bootstrap.scoringQueue
   } catch (reason) {
     loadError.value = reason instanceof Error ? reason.message : 'Unable to load jobs.'
   } finally {

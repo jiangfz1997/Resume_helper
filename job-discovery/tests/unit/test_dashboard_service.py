@@ -6,10 +6,19 @@ from uuid import UUID, uuid4
 from job_discovery.dashboard.models import (
     DashboardJobQuery,
     DashboardJobUserState,
+    DashboardUserStateSnapshot,
     DiscoveryRunReport,
     JobLifecycleStatus,
 )
-from job_discovery.dashboard.service import get_dashboard_job, get_scoring_queue, list_dashboard_jobs, list_dashboard_runs
+from job_discovery.dashboard.service import (
+    get_dashboard_bootstrap,
+    get_dashboard_job,
+    get_scoring_queue,
+    list_dashboard_jobs,
+    list_dashboard_runs,
+)
+from job_discovery.domain.settings import UserScoringProfile
+from job_discovery.repositories.dashboard_cache import CachingDashboardJobReader
 from job_discovery.domain.models import (
     EligibilityStatus,
     JobCategory,
@@ -28,11 +37,15 @@ class FakeDashboardReader:
     def __init__(self, records: list[JobRecord], listings: list[JobSourceListing]) -> None:
         self.records = records
         self.listings = listings
+        self.record_scans = 0
+        self.listing_scans = 0
 
     def list_records(self) -> list[JobRecord]:
+        self.record_scans += 1
         return self.records
 
     def list_all_listings(self) -> list[JobSourceListing]:
+        self.listing_scans += 1
         return self.listings
 
     def get_record(self, job_id: UUID) -> JobRecord | None:
@@ -204,3 +217,84 @@ def test_archived_jobs_are_excluded_from_scoring_queue() -> None:
     assert queue.queued == 0
     assert queue.failed == 0
     assert queue.archived_skipped == 1
+
+
+class CountingStateRepository:
+    def __init__(
+        self,
+        snapshot: DashboardUserStateSnapshot,
+        profile: UserScoringProfile | None,
+        reports: list[DiscoveryRunReport],
+    ) -> None:
+        self.snapshot = snapshot
+        self.profile = profile
+        self.reports = reports
+        self.snapshot_calls = 0
+        self.profile_calls = 0
+
+    def get_snapshot(self, user_id: str) -> DashboardUserStateSnapshot:
+        self.snapshot_calls += 1
+        return self.snapshot
+
+    def get_scoring_profile(self, user_id: str) -> UserScoringProfile | None:
+        self.profile_calls += 1
+        return self.profile
+
+    def list_discovery_runs(self) -> list[DiscoveryRunReport]:
+        return self.reports
+
+
+def _bootstrap_fixtures() -> tuple[FakeDashboardReader, CountingStateRepository]:
+    scored = _record("Backend Engineer", 9)
+    unscored = _record("QA Engineer", None)
+    reader = FakeDashboardReader(
+        [scored, unscored],
+        [_listing(scored, SourceName.WORKDAY), _listing(unscored, SourceName.INDEED)],
+    )
+    snapshot = DashboardUserStateSnapshot(
+        jobs=[DashboardJobUserState(job_id=scored.job_id, coarse_score=9, profile_version=2, updated_at=NOW)]
+    )
+    profile = UserScoringProfile(user_id="user-1", skills=["Python"], active=True, profile_version=2, updated_at=NOW)
+    return reader, CountingStateRepository(snapshot, profile, [])
+
+
+def test_bootstrap_matches_the_endpoints_it_replaces() -> None:
+    reader, repository = _bootstrap_fixtures()
+    query = DashboardJobQuery()
+
+    bootstrap = get_dashboard_bootstrap(reader, repository, "user-1", query)
+
+    assert bootstrap.jobs == list_dashboard_jobs(reader, query)
+    assert bootstrap.runs == list_dashboard_runs(reader, repository.reports)
+    assert bootstrap.user_state == repository.snapshot
+    assert bootstrap.scoring_profile == repository.profile
+    assert bootstrap.scoring_queue == get_scoring_queue(reader, repository.snapshot.jobs, 2)
+
+
+def test_bootstrap_reads_user_state_and_profile_once() -> None:
+    reader, repository = _bootstrap_fixtures()
+
+    get_dashboard_bootstrap(reader, repository, "user-1", DashboardJobQuery())
+
+    assert repository.snapshot_calls == 1
+    assert repository.profile_calls == 1
+
+
+def test_bootstrap_scans_each_table_once_behind_the_cache() -> None:
+    reader, repository = _bootstrap_fixtures()
+    cached = CachingDashboardJobReader(reader, ttl_seconds=30.0)
+
+    get_dashboard_bootstrap(cached, repository, "user-1", DashboardJobQuery())
+
+    assert reader.record_scans == 1
+    assert reader.listing_scans == 1
+
+
+def test_bootstrap_without_a_profile_reports_no_current_scores() -> None:
+    reader, repository = _bootstrap_fixtures()
+    repository.profile = None
+
+    bootstrap = get_dashboard_bootstrap(reader, repository, "user-1", DashboardJobQuery())
+
+    assert bootstrap.scoring_profile is None
+    assert bootstrap.scoring_queue.scored_current == 0
