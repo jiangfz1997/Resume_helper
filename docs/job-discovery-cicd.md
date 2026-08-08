@@ -27,7 +27,7 @@ non-`main` branch pushes, and manual dispatches. It:
 1. installs development dependencies;
 2. runs the Job Discovery test suite;
 3. builds all four Job Discovery Lambda packages;
-4. validates the dashboard SAM template and zip files; and
+4. validates the Dashboard and Discovery infrastructure templates and zip files; and
 5. retains the packages as a GitHub Actions artifact for seven days.
 
 The artifact produced here is stored by GitHub for inspection. It is not copied
@@ -208,5 +208,22 @@ Before detachment, the Dashboard stack applied `DeletionPolicy` and
 `UpdateReplacePolicy` set to `Retain` to the discovery Scheduler role and both
 crawler schedules. Removing them from `dashboard-api.yaml` therefore releases
 CloudFormation ownership without deleting or disabling the physical resources.
-The next migration phase imports those retained resources into the dedicated
-Discovery stack.
+
+`infra/discovery.yaml` is the target template for the dedicated Discovery
+stack. Its first deployment must be a CloudFormation resource import, not a
+normal create operation. In the CloudFormation console, choose **Create stack**,
+then **With existing resources (import resources)**, and upload the template.
+Use these resource identifiers:
+
+| Logical ID | Identifier | Existing value |
+|---|---|---|
+| `DiscoverySchedulerRole` | `RoleName` | Role name from either managed schedule's Target execution-role ARN |
+| `WorkdayDiscoverySchedule` | `Name` | `job-discovery-workday-managed` |
+| `JobSpyDiscoverySchedule` | `Name` | `job-discovery-jobspy-managed` |
+
+Set stack name `job-discovery` and parameter `SchedulerRoleName` to that same
+physical IAM role name. Keep the two function-name parameters at their defaults.
+The import must contain all three resources and must not create, delete, or
+change their configuration. After it reaches `IMPORT_COMPLETE`, run drift
+detection and confirm both schedules remain enabled. Automatic deployment of
+this template is deliberately deferred until the import succeeds.

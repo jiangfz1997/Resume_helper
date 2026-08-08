@@ -56,8 +56,10 @@ jobs:
       - name: Set up AWS SAM
         uses: aws-actions/setup-sam@v2
 
-      - name: Validate dashboard infrastructure
-        run: sam validate --region us-east-1 --template-file job-discovery/infra/dashboard-api.yaml
+      - name: Validate infrastructure templates
+        run: |
+          sam validate --region us-east-1 --template-file job-discovery/infra/dashboard-api.yaml
+          sam validate --region us-east-1 --template-file job-discovery/infra/discovery.yaml
 
       - name: Validate Lambda packages
         shell: bash
