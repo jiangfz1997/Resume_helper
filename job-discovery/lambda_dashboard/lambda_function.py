@@ -13,6 +13,7 @@ from job_discovery.dashboard.interfaces import DashboardJobReader, DashboardUser
 from job_discovery.dashboard.models import DashboardJobQuery, UpdateJobStateRequest
 from job_discovery.dashboard.service import get_dashboard_job, get_scoring_queue, list_dashboard_jobs, list_dashboard_runs
 from job_discovery.domain.settings import DiscoverySettingsInput, ScoringProfileInput
+from job_discovery.repositories.dashboard_cache import CachingDashboardJobReader
 from job_discovery.repositories.dynamodb_dashboard import DynamoDBDashboardJobReader
 from job_discovery.repositories.dynamodb_dashboard_state import DynamoDBDashboardUserStateRepository
 
@@ -27,10 +28,12 @@ _lambda_client: Any = None
 def _get_reader() -> DashboardJobReader:
     global _reader
     if _reader is None:
-        _reader = DynamoDBDashboardJobReader(
+        base_reader = DynamoDBDashboardJobReader(
             records_table=os.environ["RECORDS_TABLE"],
             listings_table=os.environ["LISTINGS_TABLE"],
         )
+        ttl_seconds = float(os.environ.get("DASHBOARD_CACHE_TTL_SECONDS", "30"))
+        _reader = CachingDashboardJobReader(base_reader, ttl_seconds=ttl_seconds)
     return _reader
 
 
