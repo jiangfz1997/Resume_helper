@@ -11,7 +11,13 @@ from pydantic import ValidationError
 
 from job_discovery.dashboard.interfaces import DashboardJobReader, DashboardUserStateRepository
 from job_discovery.dashboard.models import DashboardJobQuery, UpdateJobStateRequest
-from job_discovery.dashboard.service import get_dashboard_job, get_scoring_queue, list_dashboard_jobs, list_dashboard_runs
+from job_discovery.dashboard.service import (
+    get_dashboard_bootstrap,
+    get_dashboard_job,
+    get_scoring_queue,
+    list_dashboard_jobs,
+    list_dashboard_runs,
+)
 from job_discovery.domain.settings import DiscoverySettingsInput, ScoringProfileInput
 from job_discovery.repositories.dashboard_cache import CachingDashboardJobReader
 from job_discovery.repositories.dynamodb_dashboard import DynamoDBDashboardJobReader
@@ -53,6 +59,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     route_key = event.get("routeKey", "")
     try:
+        if route_key == "GET /bootstrap":
+            query = _parse_query(event.get("queryStringParameters"))
+            bootstrap = get_dashboard_bootstrap(_get_reader(), _get_state_repository(), user_id, query)
+            return _response(200, bootstrap.model_dump(mode="json"))
         if route_key == "GET /jobs":
             query = _parse_query(event.get("queryStringParameters"))
             return _response(200, list_dashboard_jobs(_get_reader(), query).model_dump(mode="json"))

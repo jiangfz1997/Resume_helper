@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -25,3 +26,27 @@ def test_scoring_schedule_runs_after_discovery() -> None:
     assert properties["ScheduleExpression"] == "cron(45 10 * * ? *)"
     assert properties["ScheduleExpressionTimezone"] == "America/Toronto"
     assert properties["Input"] == '{"limit":30}'
+
+
+def test_template_routes_match_the_handler() -> None:
+    """A route implemented in the handler but missing from Events 404s at the
+    API Gateway, and one wired in Events with no handler branch falls through
+    to 'route not found' -- neither shows up until deploy."""
+    handler_source = (Path(__file__).parents[2] / "lambda_dashboard" / "lambda_function.py").read_text(encoding="utf-8")
+    handler_routes = set(re.findall(r'route_key == "([^"]+)"', handler_source))
+
+    events = _template()["Resources"]["DashboardReadFunction"]["Properties"]["Events"]
+    template_routes = {
+        f"{event['Properties']['Method']} {event['Properties']['Path']}"
+        for event in events.values()
+        if event["Type"] == "HttpApi"
+    }
+
+    assert handler_routes == template_routes
+
+
+def test_bootstrap_route_is_wired() -> None:
+    events = _template()["Resources"]["DashboardReadFunction"]["Properties"]["Events"]
+
+    assert events["GetBootstrap"]["Properties"]["Path"] == "/bootstrap"
+    assert events["GetBootstrap"]["Properties"]["Method"] == "GET"

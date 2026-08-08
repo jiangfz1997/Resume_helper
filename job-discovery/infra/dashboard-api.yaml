@@ -190,6 +190,12 @@ Resources:
                 - lambda:InvokeFunction
               Resource: !GetAtt PersonalizedScoringFunction.Arn
       Events:
+        GetBootstrap:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /bootstrap
         ListJobs:
           Type: HttpApi
           Properties:

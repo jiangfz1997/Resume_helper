@@ -3,6 +3,7 @@ import recordsCsv from '../mocks/job-records.csv?raw'
 import { classifyJobCategory } from './category'
 import { cleanExportedString, nullableString, parseCsv } from './csv'
 import type {
+  DashboardBootstrap,
   DashboardJob,
   DashboardJobSummary,
   DashboardRunSummary,
@@ -121,6 +122,13 @@ export class MockJobDataSource implements JobDataSource {
         primaryListing,
       }
     })
+  }
+
+  async getBootstrap(): Promise<DashboardBootstrap> {
+    const [jobs, runs, userState, scoringProfile, scoringQueue] = await Promise.all([
+      this.listJobs(), this.listRuns(), this.getUserState(), this.getScoringProfile(), this.getScoringQueue(),
+    ])
+    return { jobs, runs, userState, scoringProfile, scoringQueue }
   }
 
   async listJobs(): Promise<DashboardJobSummary[]> {
