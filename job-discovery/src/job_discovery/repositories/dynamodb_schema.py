@@ -2,8 +2,11 @@
 (scripts/create_dynamodb_tables.py) and the moto-backed contract tests in
 tests/unit/test_repository_contract.py, so the two can never drift apart.
 
-Four tables, every read a primary-key read with ConsistentRead=True, zero
-GSIs. This is a correction, not the original design: an earlier version used
+Four tables, zero GSIs, and every read on the write path a primary-key read
+with ConsistentRead=True. (The read-only dashboard reader in
+dynamodb_dashboard.py is the one exception: it never writes these tables, so
+it uses projected, eventually consistent reads -- see its module docstring.)
+This is a correction, not the original design: an earlier version used
 two GSIs (source lookup, eligibility_status) to avoid a table scan, and a
 real Lambda run on 2026-08-05 hit an AssertionError because GSI reads are
 *always* eventually consistent in DynamoDB -- there is no ConsistentRead
