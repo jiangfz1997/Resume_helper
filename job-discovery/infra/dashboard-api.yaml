@@ -313,9 +313,9 @@ Resources:
         ScheduledScoring:
           Type: ScheduleV2
           Properties:
-            ScheduleExpression: cron(45 10,14,20 * * ? *)
+            ScheduleExpression: cron(45 10 * * ? *)
             ScheduleExpressionTimezone: America/Toronto
-            Input: '{"limit":20}'
+            Input: '{"limit":30}'
 
 Outputs:
   ApiUrl:

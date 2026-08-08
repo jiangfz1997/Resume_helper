@@ -44,8 +44,8 @@ Resources:
     Properties:
       Name: job-discovery-workday-managed
       GroupName: default
-      Description: Run the shared Workday discovery crawler three times per Toronto day
-      ScheduleExpression: cron(0 10,14,20 * * ? *)
+      Description: Run the shared Workday discovery crawler once per Toronto day
+      ScheduleExpression: cron(0 10 * * ? *)
       ScheduleExpressionTimezone: America/Toronto
       FlexibleTimeWindow:
         Mode: 'OFF'
@@ -65,8 +65,8 @@ Resources:
     Properties:
       Name: job-discovery-jobspy-managed
       GroupName: default
-      Description: Run the shared JobSpy discovery crawler three times per Toronto day
-      ScheduleExpression: cron(0 10,14,20 * * ? *)
+      Description: Run the shared JobSpy discovery crawler once per Toronto day
+      ScheduleExpression: cron(0 10 * * ? *)
       ScheduleExpressionTimezone: America/Toronto
       FlexibleTimeWindow:
         Mode: 'OFF'
