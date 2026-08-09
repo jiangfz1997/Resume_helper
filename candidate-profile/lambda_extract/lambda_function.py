@@ -12,7 +12,7 @@ import os
 from typing import Any
 
 from candidate_profile.extraction.extractor import GeminiJobInfoExtractor
-from candidate_profile.extraction.fetcher import HttpPageFetcher, html_to_text, strip_non_content_tags
+from candidate_profile.extraction.fetcher import CompositePageFetcher
 from candidate_profile.repositories.dynamodb import DynamoDBCandidateProfileRepository
 
 log = logging.getLogger()
@@ -38,15 +38,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     repository = _get_repository()
 
     try:
-        html = HttpPageFetcher().fetch(url)
-        page_text = html_to_text(html)
-        if not page_text.strip():
+        page = CompositePageFetcher().load(url)
+        if not page.text.strip():
             raise ValueError("no extractable text found on page")
-        page_text = page_text[:MAX_JD_TEXT_CHARS]
-        extracted = GeminiJobInfoExtractor().extract(page_text)
-        repository.complete_application_extraction(
-            user_id, application_id, extracted, strip_non_content_tags(html)
-        )
+        log.info("fetched %s via %s (%d chars)", url, page.fetch_strategy.value, len(page.text))
+        extracted = GeminiJobInfoExtractor().extract(page.text[:MAX_JD_TEXT_CHARS])
+        repository.complete_application_extraction(user_id, application_id, extracted, page.raw_html)
         return {"ok": True}
     except Exception as exc:
         log.exception("application extraction failed: user=%s application=%s url=%s", user_id, application_id, url)

@@ -143,6 +143,26 @@ class JobApplication(BaseModel):
     updated_at: datetime
 
 
+class FetchStrategy(str, Enum):
+    """Which reader produced a FetchedPage. Stored on the model rather than
+    inferred from the URL later so a support question about one bad record
+    can be answered from the record itself."""
+
+    HTML = "html"
+    WORKDAY_CXS = "workday_cxs"
+
+
+class FetchedPage(BaseModel):
+    """What a PageFetcher returns. Carries text separately from raw_html
+    because the two no longer come from one document: a Workday posting is
+    read from a JSON API, where the only markup is the description fragment
+    and there is no page HTML to snapshot."""
+
+    text: str
+    raw_html: str | None = None
+    fetch_strategy: FetchStrategy = FetchStrategy.HTML
+
+
 class ExtractedJobInfo(BaseModel):
     company: str | None = None
     title: str | None = None
