@@ -97,7 +97,12 @@ Resources:
       Runtime: python3.13
       Architectures:
         - x86_64
-      MemorySize: 256
+      # Not a memory requirement -- peak usage is ~110MB. Lambda scales CPU
+      # with the memory setting, and this function's latency is dominated by
+      # cold-start CPU work (imports, boto3 client construction), so the
+      # larger size finishes that work ~4x faster for roughly the same cost:
+      # the price is per GB-second and the billed duration drops in step.
+      MemorySize: 1024
       Timeout: 10
       Environment:
         Variables:
@@ -152,12 +157,6 @@ Resources:
             ApiId: !Ref CandidateProfileApi
             Method: GET
             Path: /applications
-        ApplicationStats:
-          Type: HttpApi
-          Properties:
-            ApiId: !Ref CandidateProfileApi
-            Method: GET
-            Path: /applications/stats
         GetApplication:
           Type: HttpApi
           Properties:

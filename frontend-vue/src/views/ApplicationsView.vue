@@ -114,12 +114,12 @@
 import { NTag, useMessage, type DataTableColumns } from 'naive-ui'
 import { computed, h, onMounted, ref } from 'vue'
 import { applicationDataSource } from '../applications/dataSource'
-import type { ApplicationStats, ApplicationStatus, JobApplication } from '../applications/models'
+import { deriveStats } from '../applications/models'
+import type { ApplicationStatus, JobApplication } from '../applications/models'
 
 const message = useMessage()
 
 const applications = ref<JobApplication[]>([])
-const stats = ref<ApplicationStats>({ today: 0, thisWeek: 0, total: 0, byStatus: {} })
 const loading = ref(true)
 const loadError = ref('')
 const statusFilter = ref<'all' | ApplicationStatus>('all')
@@ -135,6 +135,11 @@ const selected = computed(() => applications.value.find((application) => applica
 const visibleApplications = computed(() => statusFilter.value === 'all'
   ? applications.value
   : applications.value.filter((application) => application.status === statusFilter.value))
+// Derived rather than fetched. The counters are a pure function of the list
+// this view already holds, and the separate /applications/stats request was
+// issued in parallel with the list, so it landed on a second Lambda container
+// and paid a second cold start -- about 1.6s on both requests instead of one.
+const stats = computed(() => deriveStats(applications.value))
 const statusBreakdown = computed(() => Object.entries(stats.value.byStatus)
   .map(([status, count]) => ({ status: status as ApplicationStatus, count: count ?? 0 }))
   .filter((entry) => entry.count > 0))
@@ -183,12 +188,7 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    const [loadedApplications, loadedStats] = await Promise.all([
-      applicationDataSource.listApplications(),
-      applicationDataSource.getStats(),
-    ])
-    applications.value = loadedApplications
-    stats.value = loadedStats
+    applications.value = await applicationDataSource.listApplications()
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : 'Unable to load applications.'
   } finally {
@@ -237,7 +237,6 @@ async function submitAdd(): Promise<void> {
   try {
     const created = await applicationDataSource.createFromUrl(url)
     applications.value = [created, ...applications.value]
-    stats.value = await applicationDataSource.getStats()
     addForm.value.url = ''
     showAddDialog.value = false
     message.success('Saved. Extracting job details in the background…')
@@ -262,14 +261,12 @@ function pollExtraction(applicationId: string, attempt = 0): void {
 async function updateStatus(applicationId: string, status: ApplicationStatus): Promise<void> {
   const updated = await applicationDataSource.updateStatus(applicationId, status)
   applications.value = applications.value.map((application) => application.applicationId === applicationId ? updated : application)
-  stats.value = await applicationDataSource.getStats()
 }
 
 async function removeApplication(applicationId: string): Promise<void> {
   await applicationDataSource.deleteApplication(applicationId)
   applications.value = applications.value.filter((application) => application.applicationId !== applicationId)
   showDetail.value = false
-  stats.value = await applicationDataSource.getStats()
 }
 
 function statusLabel(status: ApplicationStatus): string {

@@ -1,6 +1,5 @@
 import type {
   ApplicationDataSource,
-  ApplicationStats,
   ApplicationStatus,
   CreateApplicationFromJob,
   JobApplication,
@@ -23,7 +22,6 @@ interface ApiApplication {
   title: string
   location: string | null
   jd_text: string
-  raw_html: string | null
   status: ApplicationStatus
   status_history: ApiStatusEvent[]
   extraction_status: 'ready' | 'extracting' | 'failed'
@@ -34,13 +32,6 @@ interface ApiApplication {
   updated_at: string
 }
 
-interface ApiStats {
-  today: number
-  this_week: number
-  total: number
-  by_status: Partial<Record<ApplicationStatus, number>>
-}
-
 export class ApiApplicationDataSource implements ApplicationDataSource {
   constructor(private readonly baseUrl: string, private readonly tokenProvider: () => string | null) {}
 
@@ -48,11 +39,6 @@ export class ApiApplicationDataSource implements ApplicationDataSource {
     const query = status ? `?status=${encodeURIComponent(status)}` : ''
     const page = await this.request<{ items: ApiApplication[] }>(`/applications${query}`)
     return page.items.map(toApplication)
-  }
-
-  async getStats(): Promise<ApplicationStats> {
-    const stats = await this.request<ApiStats>('/applications/stats')
-    return { today: stats.today, thisWeek: stats.this_week, total: stats.total, byStatus: stats.by_status }
   }
 
   async createFromJob(data: CreateApplicationFromJob): Promise<JobApplication> {
@@ -148,7 +134,6 @@ function toApplication(item: ApiApplication): JobApplication {
     title: item.title,
     location: item.location,
     jdText: item.jd_text,
-    rawHtml: item.raw_html,
     status: item.status,
     statusHistory: item.status_history.map((event) => ({
       status: event.status,

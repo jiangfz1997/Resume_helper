@@ -10,7 +10,6 @@ from candidate_profile.domain.models import (
     ExtractedJobInfo,
     FetchedPage,
     JobApplication,
-    ApplicationStats,
     UpdateApplicationFields,
 )
 
@@ -43,8 +42,6 @@ class CandidateProfileRepository(Protocol):
     ) -> JobApplication | None: ...
 
     def delete_application(self, user_id: str, application_id: str) -> None: ...
-
-    def get_application_stats(self, user_id: str) -> ApplicationStats: ...
 
 
 class PageFetcher(Protocol):

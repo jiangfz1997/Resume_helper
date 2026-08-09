@@ -1,6 +1,5 @@
 import type {
   ApplicationDataSource,
-  ApplicationStats,
   ApplicationStatus,
   CreateApplicationFromJob,
   JobApplication,
@@ -16,22 +15,6 @@ export class MockApplicationDataSource implements ApplicationDataSource {
     return [...filtered].sort((left, right) => Date.parse(right.appliedAt) - Date.parse(left.appliedAt))
   }
 
-  async getStats(): Promise<ApplicationStats> {
-    const applications = load()
-    const now = new Date()
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const weekStart = new Date(todayStart)
-    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7))
-    const byStatus: Partial<Record<ApplicationStatus, number>> = {}
-    for (const application of applications) byStatus[application.status] = (byStatus[application.status] ?? 0) + 1
-    return {
-      today: applications.filter((application) => Date.parse(application.appliedAt) >= todayStart.getTime()).length,
-      thisWeek: applications.filter((application) => Date.parse(application.appliedAt) >= weekStart.getTime()).length,
-      total: applications.length,
-      byStatus,
-    }
-  }
-
   async createFromJob(data: CreateApplicationFromJob): Promise<JobApplication> {
     const now = new Date().toISOString()
     const application: JobApplication = {
@@ -44,7 +27,6 @@ export class MockApplicationDataSource implements ApplicationDataSource {
       title: data.title,
       location: data.location ?? null,
       jdText: data.jdText,
-      rawHtml: null,
       status: 'applied',
       statusHistory: [{ status: 'applied', note: null, changedAt: now }],
       extractionStatus: 'ready',
@@ -70,7 +52,6 @@ export class MockApplicationDataSource implements ApplicationDataSource {
       title: 'Local dev preview (no extraction worker)',
       location: null,
       jdText: `Mock data source: paste-URL extraction is not simulated locally. Original link: ${url}`,
-      rawHtml: null,
       status: 'applied',
       statusHistory: [{ status: 'applied', note: null, changedAt: now }],
       extractionStatus: 'ready',
