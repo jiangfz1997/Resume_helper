@@ -113,10 +113,34 @@
         </section>
 
         <section class="description-section">
-          <header><div><span class="eyebrow">JOB DESCRIPTION</span><small>{{ selectedJob.descriptionChars.toLocaleString() }} characters</small></div>
+          <div class="description-heading">
+            <button
+              class="description-toggle"
+              type="button"
+              :aria-expanded="descriptionExpanded"
+              aria-controls="full-job-description"
+              @click="descriptionExpanded = !descriptionExpanded"
+            >
+              <span class="description-title">
+                <span class="eyebrow">FULL JOB POSTING</span>
+                <small>{{ selectedJob.descriptionChars.toLocaleString() }} characters · archived original</small>
+              </span>
+              <span class="description-toggle-label">{{ descriptionExpanded ? 'Hide' : 'View' }} <i aria-hidden="true">⌄</i></span>
+            </button>
             <a v-if="selectedJob.primaryListing" :href="selectedJob.primaryListing.applyUrl || selectedJob.primaryListing.sourceUrl" target="_blank" rel="noopener noreferrer">Open original ↗</a>
-          </header>
-          <div class="description">{{ selectedJob.description || 'No description was captured for this role.' }}</div>
+          </div>
+          <div v-if="descriptionExpanded" id="full-job-description" class="description">
+            <template v-if="descriptionBlocks.length">
+              <template v-for="(block, index) in descriptionBlocks" :key="`${block.type}-${index}`">
+                <h3 v-if="block.type === 'heading'">{{ block.text }}</h3>
+                <ul v-else-if="block.type === 'list'">
+                  <li v-for="item in block.items" :key="item">{{ item }}</li>
+                </ul>
+                <p v-else>{{ block.text }}</p>
+              </template>
+            </template>
+            <p v-else class="description-empty">No description was captured for this role.</p>
+          </div>
         </section>
 
         <section v-if="selectedJob.listings.length" class="sources">
@@ -142,6 +166,9 @@ import { jobDataSource } from '../jobs/dataSource'
 import type { DashboardJob, DashboardJobSummary, DashboardRunSummary, DashboardUserState, JobUserState, JobUserStatus, ScoringQueueSummary, WorkplaceType } from '../jobs/models'
 
 type StatusFilter = 'pending' | Exclude<JobUserStatus, 'new'>
+type DescriptionBlock =
+  | { type: 'heading' | 'paragraph'; text: string }
+  | { type: 'list'; items: string[] }
 
 const router = useRouter()
 const jobs = ref<DashboardJobSummary[]>([])
@@ -163,6 +190,7 @@ const score = ref('all')
 const freshness = ref('current')
 const sort = ref('newest')
 const status = ref<StatusFilter>('pending')
+const descriptionExpanded = ref(false)
 
 const categoryOptions = [{ label: 'All tracks', value: 'all' }, { label: 'SDE', value: 'sde' }, { label: 'QA', value: 'qa' }]
 const eligibilityOptions = [{ label: 'Actionable roles', value: 'actionable' }, { label: 'Eligible', value: 'eligible' }, { label: 'Needs review', value: 'review' }, { label: 'Excluded', value: 'excluded' }, { label: 'All decisions', value: 'all' }]
@@ -204,6 +232,7 @@ const statusTabs = computed(() => {
   const count = (value: JobUserStatus): number => jobs.value.filter((job) => statusFor(job.jobId) === value).length
   return [{ label: 'Pending', value: 'pending' as const, count: pendingCount.value }, { label: 'Saved', value: 'saved' as const, count: count('saved') }, { label: 'Shortlist', value: 'selected' as const, count: count('selected') }, { label: 'Applied', value: 'applied' as const, count: count('applied') }, { label: 'Rejected', value: 'rejected' as const, count: count('rejected') }]
 })
+const descriptionBlocks = computed<DescriptionBlock[]>(() => formatDescription(selectedJob.value?.description ?? ''))
 
 onMounted(async () => {
   try {
@@ -234,6 +263,7 @@ let detailRequest = 0
 watch(selectedJobId, async (jobId) => {
   const request = ++detailRequest
   selectedJob.value = null
+  descriptionExpanded.value = false
   if (!jobId) return
   detailLoading.value = true
   try {
@@ -251,6 +281,56 @@ watch(selectedJobId, async (jobId) => {
 })
 
 function timestamp(job: DashboardJobSummary): number { return Date.parse(job.postedAt ?? job.firstSeenAt) || 0 }
+function formatDescription(value: string): DescriptionBlock[] {
+  const lines = value
+    .replace(/\r\n?/g, '\n')
+    .replace(/\\r\\n|\\n|\\r/g, '\n')
+    .replace(/\\([\\`*_[\]{}()#+.!|>&-])/g, '$1')
+    .split('\n')
+    .map((line) => line.trim())
+
+  const blocks: DescriptionBlock[] = []
+  let listItems: string[] = []
+  const flushList = (): void => {
+    if (listItems.length) blocks.push({ type: 'list', items: listItems })
+    listItems = []
+  }
+
+  for (const line of lines) {
+    if (!line) {
+      flushList()
+      continue
+    }
+
+    const bullet = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/)
+    if (bullet) {
+      listItems.push(cleanInlineMarkdown(bullet[1]))
+      continue
+    }
+
+    flushList()
+    const markdownHeading = line.match(/^#{1,4}\s+(.+)$/)
+    const boldHeading = line.match(/^\*\*(.+?)\*\*:?$/)
+    if (markdownHeading || boldHeading || isPlainTextHeading(line)) {
+      blocks.push({ type: 'heading', text: cleanInlineMarkdown(markdownHeading?.[1] ?? boldHeading?.[1] ?? line) })
+    } else {
+      blocks.push({ type: 'paragraph', text: cleanInlineMarkdown(line) })
+    }
+  }
+  flushList()
+  return blocks
+}
+
+function cleanInlineMarkdown(value: string): string {
+  return value.replace(/^\*+|\*+$/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function isPlainTextHeading(value: string): boolean {
+  const normalized = value.replace(/:$/, '').trim()
+  if (normalized.length > 64 || /[.!?]$/.test(normalized)) return false
+  if (value.endsWith(':')) return true
+  return /^(?:about (?:us|the role|you)|additional information|ai usage disclosure|benefits|compensation|education|examples of the problems you'll solve|job requirements|nice to have|one last thing|our commitment|qualifications|responsibilities|salary range|the opportunity|training & onboarding|what (?:the role offers|success looks like|we're looking for|you(?:'ll| will)? do|you need to succeed)|who we are|your impact)$/i.test(normalized)
+}
 function initials(company: string): string { return company.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase() }
 function workplaceLabel(value: WorkplaceType): string { return ({ remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site', unknown: 'Workplace unknown' } satisfies Record<WorkplaceType, string>)[value] }
 function sourceLabel(value: string): string { return ({ workday: 'Workday', indeed: 'Indeed', linkedin: 'LinkedIn', zip_recruiter: 'ZipRecruiter' } as Record<string, string>)[value] ?? value }
@@ -344,7 +424,7 @@ function resetFilters(): void { search.value = ''; category.value = 'all'; runFi
 <style scoped>
 .jobs-page { --panel:#12151c; --raised:#171b24; --border:rgba(255,255,255,.08); --muted:#8e98a9; min-height:calc(100vh - 56px); padding:30px 34px 48px; color:#edf1f7; background:radial-gradient(circle at 8% -15%,rgba(58,121,255,.15),transparent 32%),radial-gradient(circle at 92% 0,rgba(117,73,216,.1),transparent 28%),#0b0d12; }
 .hero { display:flex; justify-content:space-between; align-items:flex-end; gap:30px; max-width:1500px; margin:0 auto 24px; }
-.eyebrow { color:#6fa8ff; font:700 10px/1.3 monospace; letter-spacing:.16em; }
+.eyebrow { color:#9ac4ff; font:750 11px/1.35 system-ui,sans-serif; letter-spacing:.105em; }
 .hero h1 { margin:8px 0 6px; font-size:clamp(26px,3vw,40px); line-height:1.1; letter-spacing:-.035em; }
 .hero p { margin:0; color:var(--muted); font-size:14px; }
 .snapshot { display:flex; align-items:center; gap:10px; min-width:180px; padding:12px 15px; border:1px solid var(--border); border-radius:10px; background:rgba(18,21,28,.75); }
@@ -363,12 +443,12 @@ function resetFilters(): void { search.value = ''; category.value = 'all'; runFi
 .quick-actions{display:flex;gap:5px}.quick-actions a,.quick-actions button{display:grid;place-items:center;width:23px;height:23px;border:1px solid var(--border);border-radius:6px;color:var(--muted);background:rgba(255,255,255,.03);font-size:12px;line-height:1;text-decoration:none;cursor:pointer}.quick-actions a:hover,.quick-actions button:hover{color:#edf1f7;background:#1b202b}.quick-actions button.active{color:#e47784;border-color:rgba(224,88,103,.35);background:rgba(224,88,103,.1)}
 .score{display:flex;flex-direction:column;align-items:flex-end;min-width:39px}.score b{font-size:19px}.score small{color:#606a7b;font-size:8px}.score-strong{color:#4bd49d}.score-medium{color:#e9b65e}.score-low{color:#e87783}.score-empty{color:#5f6979}
 .detail{padding:23px 25px 30px}.detail>header{display:flex;justify-content:space-between;gap:20px}.detail>header span{color:#8eb8f6;font-size:12px}.detail h2{margin:5px 0 7px;font-size:23px}.detail header p{margin:0;color:var(--muted);font-size:12px}.detail-score{display:flex;flex:none;flex-direction:column;align-items:center;justify-content:center;width:69px;height:61px;border:1px solid currentColor;border-radius:10px}.detail-score b{font-size:24px}.detail-score small{color:#707b8d;font-size:8px;text-transform:uppercase}.actions{display:flex;gap:8px;margin:20px 0;padding-bottom:20px;border-bottom:1px solid var(--border)}.generate{margin-left:auto}
-.reasoning{margin-bottom:23px;padding:15px 17px;border:1px solid rgba(93,149,238,.18);border-radius:9px;background:rgba(65,109,178,.07)}.reasoning.pending{border-color:rgba(231,169,75,.18);background:rgba(231,169,75,.05)}.reasoning p{margin:7px 0 9px;color:#bac3d1;font-size:12px;line-height:1.65}.reasoning small{color:#626e80;font:9px monospace}
-.job-requirements{margin-bottom:23px}.requirement-tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.requirement-tags span{padding:5px 8px;border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#aeb8c7;background:rgba(255,255,255,.035);font-size:10px;line-height:1.3}.requirement-tags .requirement-years{border-color:rgba(231,169,75,.22);color:#e8b760;background:rgba(231,169,75,.08);font-weight:700}.requirement-tags .requirement-new-grad{border-color:rgba(62,207,142,.24);color:#53d99f;background:rgba(62,207,142,.1);font-weight:700}
-.description-section>header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:13px}.description-section>header div{display:flex;flex-direction:column;gap:4px}.description-section header small{color:#7d8797}.description-section a{color:#79aaf2;font-size:11px;text-decoration:none}.description{max-height:380px;overflow-y:auto;padding:16px;border:1px solid var(--border);border-radius:9px;color:#b5becb;background:#0e1117;font-size:12px;line-height:1.65;white-space:pre-wrap}
+.reasoning{margin-bottom:25px;padding:17px 18px;border:1px solid rgba(112,167,248,.24);border-radius:10px;background:#151a22}.reasoning.pending{border-color:rgba(231,169,75,.28);background:#1a1917}.reasoning.pending .eyebrow{color:#efc574}.reasoning p{margin:9px 0 10px;color:#d0d6df;font-size:13px;line-height:1.65}.reasoning small{color:#8a96a8;font:10px/1.4 ui-monospace,monospace}
+.job-requirements{margin-bottom:25px}.requirement-tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}.requirement-tags span{padding:6px 9px;border:1px solid rgba(255,255,255,.11);border-radius:6px;color:#c2cad6;background:#171c24;font-size:11px;line-height:1.35}.requirement-tags .requirement-years{border-color:rgba(231,169,75,.32);color:#f0c16f;background:rgba(231,169,75,.1);font-weight:700}.requirement-tags .requirement-new-grad{border-color:rgba(62,207,142,.32);color:#67e2ae;background:rgba(62,207,142,.11);font-weight:700}
+.description-section{border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#10141b}.description-heading{display:flex;align-items:center;gap:14px;padding:14px 16px}.description-toggle{display:flex;flex:1;align-items:center;justify-content:space-between;min-width:0;padding:0;border:0;border-radius:5px;color:inherit;background:transparent;text-align:left;cursor:pointer}.description-toggle:focus-visible{outline:2px solid #79aef7;outline-offset:5px}.description-title{display:flex;flex-direction:column;gap:5px}.description-title small{color:#929daf;font-size:11px}.description-toggle-label{display:flex;align-items:center;gap:7px;color:#a9caff;font-size:12px;font-weight:650}.description-toggle-label i{display:inline-block;color:#7e8da2;font-size:16px;font-style:normal;transition:transform .18s ease}.description-toggle[aria-expanded="true"] .description-toggle-label i{transform:rotate(180deg)}.description-heading>a{flex:none;color:#91bcff;font-size:11px;text-decoration:none}.description-heading>a:hover{color:#c1daff}.description{padding:8px 22px 24px;border-top:1px solid rgba(255,255,255,.08);color:#cbd3df;background:#0c1016;font-size:13px;line-height:1.75}.description h3{margin:24px 0 9px;padding-left:10px;border-left:3px solid #6fa8ff;color:#f0f4fa;font-size:15px;font-weight:720;line-height:1.4;letter-spacing:-.01em}.description h3:first-child{margin-top:16px}.description p{margin:0 0 12px}.description ul{display:grid;gap:7px;margin:8px 0 18px;padding-left:21px}.description li{padding-left:3px}.description li::marker{color:#77adf9}.description-empty{margin:16px 0!important;color:#929daf}
 .sources{margin-top:23px}.sources>a{display:grid;grid-template-columns:100px 1fr auto;gap:12px;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:7px;color:#b6bfcc;text-decoration:none}.sources a small{color:#6f7989}.sources a span{color:#78aaf3}
 .empty,.loading{display:grid;place-items:center;max-width:1500px;height:420px;margin:auto;border:1px solid var(--border);border-radius:11px;background:rgba(18,21,28,.8)}
 .load-error{max-width:1500px;margin:16px auto}
 @media(max-width:1050px){.jobs-page{padding:24px 18px}.filters{grid-template-columns:repeat(2,1fr)}.search{grid-column:1/-1}.workspace{grid-template-columns:1fr;height:auto}.job-list{max-height:540px}}
-@media(max-width:640px){.hero{align-items:flex-start;flex-direction:column}.snapshot{width:100%;box-sizing:border-box}.filters{grid-template-columns:1fr 1fr}.actions{flex-wrap:wrap}.generate{width:100%;margin-left:0}.score{display:none}}
+@media(max-width:640px){.hero{align-items:flex-start;flex-direction:column}.snapshot{width:100%;box-sizing:border-box}.filters{grid-template-columns:1fr 1fr}.actions{flex-wrap:wrap}.generate{width:100%;margin-left:0}.score{display:none}.description-heading{align-items:flex-start;flex-direction:column}.description{padding:6px 16px 20px}}
 </style>
