@@ -2,11 +2,14 @@
   <main class="jobs-page">
     <header class="hero">
       <div>
-        <span class="eyebrow">JOB DISCOVERY / PERSONAL INBOX</span>
+        <span class="eyebrow">{{ auth.isAuthenticated ? 'JOB DISCOVERY / PERSONAL INBOX' : 'JOB DISCOVERY / PUBLIC READ-ONLY DEMO' }}</span>
         <h1>Your next role, without the noise.</h1>
         <p>Review discovered roles, understand their coarse score, and build a focused shortlist.</p>
       </div>
-      <div class="snapshot"><i /><div><b>{{ pendingCount }} pending · {{ unreadRunCount }} unread runs</b><small>{{ scoringQueue.scoredCurrent }} scored · {{ scoringQueue.pending }} waiting · {{ scoringQueue.queued }} queued · {{ scoringQueue.failed }} failed · {{ unviewedCount }} unopened</small></div></div>
+      <div class="snapshot"><i /><div>
+        <template v-if="auth.isAuthenticated"><b>{{ pendingCount }} pending · {{ unreadRunCount }} unread runs</b><small>{{ scoringQueue.scoredCurrent }} scored · {{ scoringQueue.pending }} waiting · {{ scoringQueue.queued }} queued · {{ scoringQueue.failed }} failed · {{ unviewedCount }} unopened</small></template>
+        <template v-else><b>{{ jobs.length }} public roles</b><small>Read-only portfolio view</small></template>
+      </div></div>
     </header>
 
     <section class="filters">
@@ -14,7 +17,7 @@
       <n-select v-model:value="category" :options="categoryOptions" />
       <n-select v-model:value="runFilter" :options="runOptions" />
       <n-select v-model:value="eligibility" :options="eligibilityOptions" />
-      <n-select v-model:value="score" :options="scoreOptions" />
+      <n-select v-if="auth.isAuthenticated" v-model:value="score" :options="scoreOptions" />
       <n-select v-model:value="freshness" :options="freshnessOptions" />
       <n-select v-model:value="sort" :options="sortOptions" />
     </section>
@@ -55,7 +58,7 @@
             </div>
             <footer>
               <em v-if="job.jobCategory" class="is-category">{{ job.jobCategory.toUpperCase() }}</em>
-              <em v-if="!isViewed(job.jobId)" class="is-new">new</em>
+              <em v-if="auth.isAuthenticated && !isViewed(job.jobId)" class="is-new">new</em>
               <em :class="`is-${job.eligibilityStatus}`">{{ job.eligibilityStatus }}</em>
               <em v-if="job.lifecycleStatus !== 'active'" :class="`lifecycle-${job.lifecycleStatus}`">{{ job.lifecycleStatus }}</em>
               <em v-if="statusFor(job.jobId) !== 'new'" class="user-status">{{ statusLabel(statusFor(job.jobId)) }}</em>
@@ -72,12 +75,13 @@
                 @click.stop
               >↗</a>
               <button
+                v-if="auth.isAuthenticated"
                 :class="{ active: statusFor(job.jobId) === 'rejected' }"
                 :title="statusFor(job.jobId) === 'rejected' ? 'Restore' : 'Not interested'"
                 @click.stop="toggleStatus(job.jobId, 'rejected')"
               >{{ statusFor(job.jobId) === 'rejected' ? '↩' : '✕' }}</button>
             </div>
-            <div :class="['score', scoreClass(scoreFor(job.jobId))]"><b>{{ scoreFor(job.jobId) ?? '—' }}</b><small>/ 10</small></div>
+            <div v-if="auth.isAuthenticated" :class="['score', scoreClass(scoreFor(job.jobId))]"><b>{{ scoreFor(job.jobId) ?? '—' }}</b><small>/ 10</small></div>
           </div>
         </article>
       </div>
@@ -85,10 +89,10 @@
       <aside v-if="selectedJob" class="detail">
         <header>
           <div><span>{{ selectedJob.company }}</span><h2>{{ selectedJob.title }}</h2><p>{{ selectedJob.location }} · {{ workplaceLabel(selectedJob.workplaceType) }}</p></div>
-          <div :class="['detail-score', scoreClass(scoreFor(selectedJob.jobId))]"><b>{{ scoreFor(selectedJob.jobId) ?? '—' }}</b><small>your fit</small></div>
+          <div v-if="auth.isAuthenticated" :class="['detail-score', scoreClass(scoreFor(selectedJob.jobId))]"><b>{{ scoreFor(selectedJob.jobId) ?? '—' }}</b><small>your fit</small></div>
         </header>
 
-        <div class="actions">
+        <div v-if="auth.isAuthenticated" class="actions">
           <n-button :type="statusFor(selectedJob.jobId) === 'saved' ? 'primary' : 'default'" @click="toggleStatus(selectedJob.jobId, 'saved')">{{ statusFor(selectedJob.jobId) === 'saved' ? 'Saved' : 'Save role' }}</n-button>
           <n-button :type="statusFor(selectedJob.jobId) === 'selected' ? 'success' : 'default'" @click="toggleStatus(selectedJob.jobId, 'selected')">{{ statusFor(selectedJob.jobId) === 'selected' ? 'In shortlist' : 'Shortlist' }}</n-button>
           <n-button :type="statusFor(selectedJob.jobId) === 'applied' ? 'success' : 'default'" @click="toggleStatus(selectedJob.jobId, 'applied')">{{ statusFor(selectedJob.jobId) === 'applied' ? 'Applied' : 'Mark applied' }}</n-button>
@@ -97,7 +101,12 @@
           <n-button type="primary" class="generate" @click="sendToGenerate(selectedJob)">Generate resume</n-button>
         </div>
 
-        <section :class="['reasoning', { pending: !assessmentFor(selectedJob.jobId)?.coarseScoreReasoning }]">
+        <div v-else class="actions public-actions">
+          <n-button v-if="selectedJob.primaryListing" tag="a" :href="selectedJob.primaryListing.applyUrl || selectedJob.primaryListing.sourceUrl" target="_blank">Open original</n-button>
+          <n-button type="primary" @click="router.push('/auth')">Owner sign in</n-button>
+        </div>
+
+        <section v-if="auth.isAuthenticated" :class="['reasoning', { pending: !assessmentFor(selectedJob.jobId)?.coarseScoreReasoning }]">
           <span class="eyebrow">{{ assessmentFor(selectedJob.jobId)?.coarseScoreReasoning ? 'WHY THIS FITS YOU' : scoringAttemptFor(selectedJob.jobId)?.scoreError ? 'SCORING FAILED' : 'NOT SCORED FOR YOU YET' }}</span>
           <p>{{ assessmentFor(selectedJob.jobId)?.coarseScoreReasoning || scoringAttemptFor(selectedJob.jobId)?.scoreError || 'Save a scoring profile, then the scheduled scoring run will evaluate this role for your account.' }}</p>
           <small v-if="assessmentFor(selectedJob.jobId)?.scoreModel">{{ assessmentFor(selectedJob.jobId)?.scoreModel }}<template v-if="assessmentFor(selectedJob.jobId)?.scoredAt"> · {{ formatDate(assessmentFor(selectedJob.jobId)?.scoredAt ?? '') }}</template></small>
@@ -164,6 +173,7 @@ import { useRouter } from 'vue-router'
 import { applicationDataSource } from '../applications/dataSource'
 import { jobDataSource } from '../jobs/dataSource'
 import type { DashboardJob, DashboardJobSummary, DashboardRunSummary, DashboardUserState, JobUserState, JobUserStatus, ScoringQueueSummary, WorkplaceType } from '../jobs/models'
+import { useAuthStore } from '../stores/auth'
 
 type StatusFilter = 'pending' | Exclude<JobUserStatus, 'new'>
 type DescriptionBlock =
@@ -171,6 +181,7 @@ type DescriptionBlock =
   | { type: 'list'; items: string[] }
 
 const router = useRouter()
+const auth = useAuthStore()
 const jobs = ref<DashboardJobSummary[]>([])
 const runs = ref<DashboardRunSummary[]>([])
 const userState = ref<DashboardUserState>({ jobs: [], runs: [] })
@@ -229,6 +240,7 @@ const visibleJobs = computed(() => jobs.value.filter((job) => {
 }))
 
 const statusTabs = computed(() => {
+  if (!auth.isAuthenticated) return [{ label: 'All roles', value: 'pending' as const, count: jobs.value.length }]
   const count = (value: JobUserStatus): number => jobs.value.filter((job) => statusFor(job.jobId) === value).length
   return [{ label: 'Pending', value: 'pending' as const, count: pendingCount.value }, { label: 'Saved', value: 'saved' as const, count: count('saved') }, { label: 'Shortlist', value: 'selected' as const, count: count('selected') }, { label: 'Applied', value: 'applied' as const, count: count('applied') }, { label: 'Rejected', value: 'rejected' as const, count: count('rejected') }]
 })
@@ -254,7 +266,7 @@ watch(visibleJobs, (items) => {
 })
 
 watch(runFilter, async (runId) => {
-  if (runId === 'all' || isRunViewed(runId)) return
+  if (!auth.isAuthenticated || runId === 'all' || isRunViewed(runId)) return
   await jobDataSource.markRunViewed(runId)
   userState.value = { ...userState.value, runs: [...userState.value.runs, { runId, viewedAt: new Date().toISOString() }] }
 })
@@ -270,7 +282,7 @@ watch(selectedJobId, async (jobId) => {
     const job = await jobDataSource.getJob(jobId)
     if (request === detailRequest) {
       selectedJob.value = job
-      if (job && !isViewed(jobId)) {
+      if (auth.isAuthenticated && job && !isViewed(jobId)) {
         await jobDataSource.markJobViewed(jobId)
         markJobViewedLocally(jobId)
       }

@@ -7,14 +7,13 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: () => authMode === 'cognito' && !localStorage.getItem('token') ? '/auth' : '/jobs',
+      redirect: '/jobs',
     },
     { path: '/auth', component: () => import('../views/AuthView.vue') },
     { path: '/auth/callback', component: () => import('../views/AuthCallbackView.vue') },
     {
       path: '/jobs',
       component: () => import('../views/JobsView.vue'),
-      meta: { requiresCloudAuth: true },
     },
     {
       path: '/job-settings',

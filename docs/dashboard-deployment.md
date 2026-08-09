@@ -42,6 +42,15 @@ dispatched manually from GitHub Actions. Pull requests only run validation and
 never update AWS. Configure a required reviewer on the `production`
 environment if an approval gate is desired.
 
+The Jobs list, job detail, and discovery-run routes are public and read-only.
+All bootstrap, user-state, scoring, settings, crawler, and mutation routes
+remain protected by Cognito. The public list reader uses a five-minute
+in-memory scan cache, the API is throttled to two requests per second with a
+burst of five, and the dashboard Lambda has reserved concurrency of five to
+bound DynamoDB scan amplification. Public responses also advertise short
+browser-cache lifetimes. Applications and candidate-profile data remain on a
+separate, fully authenticated API.
+
 The first deployment after this change creates the
 `job-discovery-user-data` DynamoDB table, the `job-discovery-score` Lambda, and
 authenticated profile/settings routes. CloudFormation retains the table if the

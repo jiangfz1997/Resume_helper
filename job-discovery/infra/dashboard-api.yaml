@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform:
   - AWS::LanguageExtensions
   - AWS::Serverless-2016-10-31
-Description: Authenticated API for the job discovery dashboard
+Description: Public read-only job discovery API with authenticated personal workflows
 
 Parameters:
   RecordsTableName:
@@ -163,12 +163,14 @@ Resources:
         - x86_64
       MemorySize: 1024
       Timeout: 10
+      ReservedConcurrentExecutions: 5
       Environment:
         Variables:
           RECORDS_TABLE: !Ref RecordsTableName
           LISTINGS_TABLE: !Ref ListingsTableName
           USER_DATA_TABLE: !Ref DashboardUserDataTable
           ALLOWED_ORIGIN: !Ref AllowedOrigin
+          DASHBOARD_CACHE_TTL_SECONDS: '300'
           REQUIRE_AUTH: 'true'
           SCORING_FUNCTION_NAME: !Ref PersonalizedScoringFunction
           WORKDAY_FUNCTION_NAME: !Ref WorkdayFunctionName
@@ -217,18 +219,24 @@ Resources:
             ApiId: !Ref DashboardApi
             Method: GET
             Path: /jobs
+            Auth:
+              Authorizer: NONE
         GetJob:
           Type: HttpApi
           Properties:
             ApiId: !Ref DashboardApi
             Method: GET
             Path: /jobs/{job_id}
+            Auth:
+              Authorizer: NONE
         ListRuns:
           Type: HttpApi
           Properties:
             ApiId: !Ref DashboardApi
             Method: GET
             Path: /runs
+            Auth:
+              Authorizer: NONE
         GetScoringQueue:
           Type: HttpApi
           Properties:

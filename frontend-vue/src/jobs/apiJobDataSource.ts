@@ -119,6 +119,16 @@ export class ApiJobDataSource implements JobDataSource {
   constructor(private readonly baseUrl: string, private readonly tokenProvider: () => string | null) {}
 
   async getBootstrap(): Promise<DashboardBootstrap> {
+    if (!this.tokenProvider()) {
+      const [jobs, runs] = await Promise.all([this.listJobs(), this.listRuns()])
+      return {
+        jobs,
+        runs,
+        userState: { jobs: [], runs: [] },
+        scoringProfile: emptyScoringProfile(),
+        scoringQueue: { eligibleTotal: 0, scoredCurrent: 0, pending: 0, queued: 0, failed: 0, archivedSkipped: 0 },
+      }
+    }
     try {
       const payload = await this.request<ApiBootstrap>('/bootstrap?limit=500')
       return {
@@ -257,7 +267,7 @@ export class ApiJobDataSource implements JobDataSource {
         ...init.headers,
       },
     })
-    if (response.status === 401) {
+    if (response.status === 401 && token) {
       localStorage.removeItem('token')
       window.location.assign('/auth')
     }
