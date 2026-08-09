@@ -20,6 +20,8 @@ from job_discovery.domain.models import (
     SourceJobObservation,
     WorkplaceType,
 )
+from job_discovery.domain.seniority import assess_seniority
+from job_discovery.domain.years import extract_years
 
 # Known cross-site tracking params. Deliberately not a blanket "strip every
 # query string" rule -- ATS URLs carry meaningful identifiers (Greenhouse job
@@ -160,13 +162,17 @@ def build_candidate(observation: SourceJobObservation) -> NormalizedJobCandidate
         hashlib.sha256(description.encode("utf-8")).hexdigest() if description else None
     )
 
+    title = observation.title_raw.strip()
+    years = extract_years(description)
+    seniority = assess_seniority(title, description)
+
     return NormalizedJobCandidate(
         source=observation.source,
         source_job_id=observation.source_job_id,
         source_url=observation.source_url,
         apply_url_raw=observation.apply_url_raw,
         apply_url_canonical=apply_url_canonical,
-        title=observation.title_raw.strip(),
+        title=title,
         normalized_title=normalize_title(observation.title_raw),
         company=observation.company_raw.strip(),
         normalized_company=normalize_company(observation.company_raw),
@@ -180,6 +186,11 @@ def build_candidate(observation: SourceJobObservation) -> NormalizedJobCandidate
         description_chars=description_chars,
         description_hash=description_hash,
         salary_text=observation.salary_text_raw,
+        required_years_min=years.minimum,
+        required_years_max=years.maximum,
+        years_mentioned=years.mentioned,
+        is_new_grad=seniority.is_new_grad,
+        new_grad_signals=seniority.signals,
         observed_at=observation.observed_at,
         run_id=observation.run_id,
     )

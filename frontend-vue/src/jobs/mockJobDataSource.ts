@@ -58,6 +58,8 @@ function toRecord(row: Record<string, string>): JobRecord {
     coarseScore: parseScore(row.coarse_score),
     requiredYearsMin: parseScore(row.required_years_min ?? ''),
     requiredYearsMax: parseScore(row.required_years_max ?? ''),
+    isNewGrad: row.is_new_grad === 'true',
+    newGradSignals: parseKeywords(row.new_grad_signals ?? ''),
     requirementKeywords: parseKeywords(row.requirement_keywords ?? ''),
     coarseScoreReasoning: nullableString(row.coarse_score_reasoning),
     scoreModel: nullableString(row.score_model),
@@ -288,7 +290,7 @@ function loadSetting<T>(key: string, fallback: T): T {
 }
 
 function emptyMockProfile(): ScoringProfileSettings {
-  return { skills: [], targetTitles: [], minYearsExperience: null, locationPreference: '', active: true, profileVersion: null, updatedAt: null }
+  return { skills: [], targetTitles: [], minYearsExperience: null, locationPreference: '', prefersNewGrad: false, active: true, profileVersion: null, updatedAt: null }
 }
 
 function defaultMockDiscovery(): DiscoverySettings {
@@ -297,6 +299,7 @@ function defaultMockDiscovery(): DiscoverySettings {
     jobspyMaxResults: 15, workdayMaxResults: 10, sites: ['indeed', 'linkedin'], acceptedLocations: [],
     includeTitleKeywords: ['software engineer', 'software developer', 'backend', 'frontend', 'full stack', 'developer', 'sde', 'swe', 'qa engineer', 'quality assurance', 'qa analyst', 'sdet', 'test engineer', 'test automation', 'automation engineer'],
     excludeTitleKeywords: ['staff', 'principal', 'director', 'vp', 'vice president', 'head of'],
-    reviewTitleKeywords: ['senior', 'sr.', 'lead'], minDescriptionChars: 300, configVersion: null, updatedAt: null,
+    reviewTitleKeywords: ['senior', 'sr.', 'lead'], minDescriptionChars: 300, maxRequiredYears: null,
+    configVersion: null, updatedAt: null,
   }
 }

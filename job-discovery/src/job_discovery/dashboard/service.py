@@ -204,6 +204,8 @@ def _to_summary(record: JobRecord, listings: list[JobSourceListing]) -> Dashboar
         coarse_score=record.coarse_score,
         required_years_min=record.required_years_min,
         required_years_max=record.required_years_max,
+        is_new_grad=record.is_new_grad,
+        new_grad_signals=record.new_grad_signals,
         requirement_keywords=record.requirement_keywords,
         first_discovered_run_id=_first_run_id(record),
         posted_at=preferred.posted_at if preferred else None,

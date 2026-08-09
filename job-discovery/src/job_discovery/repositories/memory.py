@@ -100,10 +100,6 @@ class InMemoryJobRepository(JobRepository):
         record.score_version = score_version
         record.scored_at = score.scored_at
         record.updated_at = score.scored_at
-        if score.required_years_min is not None:
-            record.required_years_min = score.required_years_min
-        if score.required_years_max is not None:
-            record.required_years_max = score.required_years_max
         if score.requirement_keywords:
             record.requirement_keywords = score.requirement_keywords
 
@@ -111,10 +107,6 @@ class InMemoryJobRepository(JobRepository):
         record = self._records.get(job_id)
         if record is None:
             raise KeyError(f"no JobRecord for {job_id}")
-        if score.required_years_min is not None:
-            record.required_years_min = score.required_years_min
-        if score.required_years_max is not None:
-            record.required_years_max = score.required_years_max
         if score.requirement_keywords:
             record.requirement_keywords = score.requirement_keywords
 
@@ -202,6 +194,11 @@ class InMemoryJobRepository(JobRepository):
             description_chars=candidate.description_chars,
             description_hash=candidate.description_hash,
             salary_text=candidate.salary_text,
+            required_years_min=candidate.required_years_min,
+            required_years_max=candidate.required_years_max,
+            years_mentioned=candidate.years_mentioned,
+            is_new_grad=candidate.is_new_grad,
+            new_grad_signals=candidate.new_grad_signals,
             job_category=category,
             possible_duplicate_of=possible_duplicate_of,
             duplicate_matched_by=DedupKeyKind.COMPANY_TITLE_LOCATION if possible_duplicate_of else None,

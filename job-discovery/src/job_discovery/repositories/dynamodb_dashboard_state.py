@@ -99,6 +99,7 @@ class DynamoDBDashboardUserStateRepository(DashboardUserStateRepository):
             ":titles": profile.target_titles,
             ":years": profile.min_years_experience,
             ":location": profile.location_preference,
+            ":new_grad": profile.prefers_new_grad,
             ":active": profile.active,
             ":now": now,
             ":zero": 0,
@@ -109,6 +110,7 @@ class DynamoDBDashboardUserStateRepository(DashboardUserStateRepository):
             UpdateExpression=(
                 "SET entity_type = :type, skills = :skills, target_titles = :titles, "
                 "min_years_experience = :years, location_preference = :location, "
+                "prefers_new_grad = :new_grad, "
                 "active = :active, updated_at = :now, profile_version = if_not_exists(profile_version, :zero) + :one"
             ),
             ExpressionAttributeValues=values,
@@ -135,7 +137,8 @@ class DynamoDBDashboardUserStateRepository(DashboardUserStateRepository):
                 "hours_old = :hours, jobspy_max_results = :jobspy_max, workday_max_results = :workday_max, "
                 "sites = :sites, accepted_locations = :accepted, include_title_keywords = :include, "
                 "exclude_title_keywords = :exclude, review_title_keywords = :review, "
-                "min_description_chars = :min_chars, updated_at = :now, "
+                "min_description_chars = :min_chars, max_required_years = :max_years, "
+                "updated_at = :now, "
                 "config_version = if_not_exists(config_version, :zero) + :one"
             ),
             ExpressionAttributeValues={
@@ -145,6 +148,7 @@ class DynamoDBDashboardUserStateRepository(DashboardUserStateRepository):
                 ":sites": settings.sites, ":accepted": settings.accepted_locations,
                 ":include": settings.include_title_keywords, ":exclude": settings.exclude_title_keywords,
                 ":review": settings.review_title_keywords, ":min_chars": settings.min_description_chars,
+                ":max_years": settings.max_required_years,
                 ":now": now, ":zero": 0, ":one": 1,
             },
             ReturnValues="ALL_NEW",
@@ -255,7 +259,8 @@ def _to_profile(item: dict[str, Any]) -> UserScoringProfile:
         user_id=item["user_id"], skills=list(item.get("skills", [])),
         target_titles=list(item.get("target_titles", [])),
         min_years_experience=int(item["min_years_experience"]) if item.get("min_years_experience") is not None else None,
-        location_preference=item.get("location_preference"), active=bool(item.get("active", True)),
+        location_preference=item.get("location_preference"),
+        prefers_new_grad=bool(item.get("prefers_new_grad", False)), active=bool(item.get("active", True)),
         profile_version=int(item.get("profile_version", 1)), updated_at=datetime.fromisoformat(item["updated_at"]),
     )
 

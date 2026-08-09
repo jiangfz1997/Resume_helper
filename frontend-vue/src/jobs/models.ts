@@ -18,6 +18,8 @@ export interface JobRecord {
   coarseScore: number | null
   requiredYearsMin: number | null
   requiredYearsMax: number | null
+  isNewGrad: boolean
+  newGradSignals: string[]
   requirementKeywords: string[]
   coarseScoreReasoning: string | null
   scoreModel: string | null
@@ -53,6 +55,8 @@ export interface DashboardJobSummary {
   coarseScore: number | null
   requiredYearsMin: number | null
   requiredYearsMax: number | null
+  isNewGrad: boolean
+  newGradSignals: string[]
   requirementKeywords: string[]
   firstDiscoveredRunId: string
   postedAt: string | null
@@ -118,6 +122,7 @@ export interface ScoringProfileSettings {
   targetTitles: string[]
   minYearsExperience: number | null
   locationPreference: string
+  prefersNewGrad: boolean
   active: boolean
   profileVersion: number | null
   updatedAt: string | null
@@ -135,6 +140,7 @@ export interface DiscoverySettings {
   excludeTitleKeywords: string[]
   reviewTitleKeywords: string[]
   minDescriptionChars: number
+  maxRequiredYears: number | null
   configVersion: number | null
   updatedAt: string | null
 }

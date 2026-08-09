@@ -59,6 +59,8 @@ class DashboardJobSummary(BaseModel):
     coarse_score: int | None = None
     required_years_min: int | None = None
     required_years_max: int | None = None
+    is_new_grad: bool = False
+    new_grad_signals: list[str] = Field(default_factory=list)
     requirement_keywords: list[str] = Field(default_factory=list)
     first_discovered_run_id: str
     posted_at: datetime | None = None

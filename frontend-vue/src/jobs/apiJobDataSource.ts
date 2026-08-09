@@ -28,6 +28,8 @@ interface ApiJobSummary {
   coarse_score: number | null
   required_years_min?: number | null
   required_years_max?: number | null
+  is_new_grad?: boolean | null
+  new_grad_signals?: string[] | null
   requirement_keywords?: string[] | null
   first_discovered_run_id: string
   posted_at: string | null
@@ -196,6 +198,7 @@ export class ApiJobDataSource implements JobDataSource {
         target_titles: profile.targetTitles,
         min_years_experience: profile.minYearsExperience,
         location_preference: profile.locationPreference || null,
+        prefers_new_grad: profile.prefersNewGrad,
         active: profile.active,
       }),
     })
@@ -215,6 +218,7 @@ export class ApiJobDataSource implements JobDataSource {
         accepted_locations: settings.acceptedLocations, include_title_keywords: settings.includeTitleKeywords,
         exclude_title_keywords: settings.excludeTitleKeywords, review_title_keywords: settings.reviewTitleKeywords,
         min_description_chars: settings.minDescriptionChars,
+        max_required_years: settings.maxRequiredYears,
       }),
     })
     return toDiscoverySettings(saved)
@@ -247,6 +251,7 @@ interface ApiScoringProfile {
   target_titles: string[]
   min_years_experience: number | null
   location_preference: string | null
+  prefers_new_grad?: boolean | null
   active: boolean
   profile_version: number
   updated_at: string
@@ -264,16 +269,17 @@ interface ApiDiscoverySettings {
   exclude_title_keywords: string[]
   review_title_keywords: string[]
   min_description_chars: number
+  max_required_years?: number | null
   config_version: number
   updated_at: string | null
 }
 
 function emptyScoringProfile(): ScoringProfileSettings {
-  return { skills: [], targetTitles: [], minYearsExperience: null, locationPreference: '', active: true, profileVersion: null, updatedAt: null }
+  return { skills: [], targetTitles: [], minYearsExperience: null, locationPreference: '', prefersNewGrad: false, active: true, profileVersion: null, updatedAt: null }
 }
 
 function toScoringProfile(profile: ApiScoringProfile): ScoringProfileSettings {
-  return { skills: profile.skills, targetTitles: profile.target_titles, minYearsExperience: profile.min_years_experience, locationPreference: profile.location_preference ?? '', active: profile.active, profileVersion: profile.profile_version, updatedAt: profile.updated_at }
+  return { skills: profile.skills, targetTitles: profile.target_titles, minYearsExperience: profile.min_years_experience, locationPreference: profile.location_preference ?? '', prefersNewGrad: profile.prefers_new_grad ?? false, active: profile.active, profileVersion: profile.profile_version, updatedAt: profile.updated_at }
 }
 
 function toDiscoverySettings(settings: ApiDiscoverySettings): DiscoverySettings {
@@ -283,6 +289,7 @@ function toDiscoverySettings(settings: ApiDiscoverySettings): DiscoverySettings 
     sites: settings.sites, acceptedLocations: settings.accepted_locations,
     includeTitleKeywords: settings.include_title_keywords, excludeTitleKeywords: settings.exclude_title_keywords,
     reviewTitleKeywords: settings.review_title_keywords, minDescriptionChars: settings.min_description_chars,
+    maxRequiredYears: settings.max_required_years ?? null,
     configVersion: settings.config_version, updatedAt: settings.updated_at,
   }
 }
@@ -355,6 +362,8 @@ function toSummary(job: ApiJobSummary): DashboardJobSummary {
     coarseScore: job.coarse_score,
     requiredYearsMin: job.required_years_min ?? null,
     requiredYearsMax: job.required_years_max ?? null,
+    isNewGrad: job.is_new_grad ?? false,
+    newGradSignals: job.new_grad_signals ?? [],
     requirementKeywords: job.requirement_keywords ?? [],
     firstDiscoveredRunId: job.first_discovered_run_id,
     postedAt: job.posted_at,

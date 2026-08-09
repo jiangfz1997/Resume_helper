@@ -20,7 +20,7 @@ class ProfileAwareScorer:
         score = 9 if "Python" in profile.skills else 6
         return CoarseScore(
             score=score, reasoning=",".join(profile.skills), model="fake",
-            scored_at=datetime.now(timezone.utc), required_years_min=2,
+            scored_at=datetime.now(timezone.utc),
             requirement_keywords=["Python", "AWS"],
         )
 
@@ -62,4 +62,3 @@ def test_existing_score_for_one_user_does_not_skip_a_second_user() -> None:
     shared_job = jobs.get_record(result.job_id)
     assert shared_job is not None
     assert shared_job.coarse_score is None
-    assert shared_job.required_years_min == 2

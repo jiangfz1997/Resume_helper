@@ -34,6 +34,7 @@ Candidate skills: {skills}
 Candidate target titles: {target_titles}
 Candidate minimum years of experience: {min_years}
 Candidate location preference: {location_pref}
+Candidate seniority preference: {seniority_pref}
 
 Job title: {title}
 Job company: {company}
@@ -41,9 +42,15 @@ Job location: {location}
 Job description:
 {description}
 
-Score the match from 1 (poor) to 10 (excellent). Also extract, strictly from the job description text, the years-of-experience requirement (if any) and the concrete requirement keywords (required skills, tools, certifications, degrees -- not soft skills or company perks). Respond with ONLY a JSON object, no markdown fences, no extra text:
-{{"score": <integer 1-10>, "reasoning": "<two sentences max>", "required_years_min": <integer or null>, "required_years_max": <integer or null>, "requirement_keywords": [<string>, ...]}}
+Score the match from 1 (poor) to 10 (excellent). Also extract, strictly from the job description text, the concrete requirement keywords (required skills, tools, certifications, degrees -- not soft skills or company perks). Respond with ONLY a JSON object, no markdown fences, no extra text:
+{{"score": <integer 1-10>, "reasoning": "<two sentences max>", "requirement_keywords": [<string>, ...]}}
 """
+
+_NEW_GRAD_PREFERENCE = (
+    "entry-level or new-graduate roles. Score postings that expect substantial "
+    "prior industry experience low even when the skills line up."
+)
+_NO_SENIORITY_PREFERENCE = "none stated"
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -55,8 +62,6 @@ class GeminiScoringError(RuntimeError):
 class _ParsedScore(BaseModel):
     score: int
     reasoning: str
-    required_years_min: int | None = None
-    required_years_max: int | None = None
     requirement_keywords: list[str] = Field(default_factory=list)
 
 
@@ -78,6 +83,7 @@ class GeminiCoarseScorer:
             target_titles=", ".join(profile.target_titles) or "any",
             min_years=profile.min_years_experience if profile.min_years_experience is not None else "unspecified",
             location_pref=profile.location_preference or "unspecified",
+            seniority_pref=_NEW_GRAD_PREFERENCE if profile.prefers_new_grad else _NO_SENIORITY_PREFERENCE,
             title=job.canonical_title,
             company=job.canonical_company,
             location=job.canonical_location or "unspecified",
@@ -91,8 +97,6 @@ class GeminiCoarseScorer:
             reasoning=parsed.reasoning,
             model=self.model,
             scored_at=datetime.now(timezone.utc),
-            required_years_min=parsed.required_years_min,
-            required_years_max=parsed.required_years_max,
             requirement_keywords=parsed.requirement_keywords,
         )
 
@@ -130,7 +134,5 @@ def _parse_score_json(text: str) -> _ParsedScore:
     return _ParsedScore(
         score=score,
         reasoning=str(data.get("reasoning", ""))[:500],
-        required_years_min=data.get("required_years_min"),
-        required_years_max=data.get("required_years_max"),
         requirement_keywords=[str(k) for k in keywords][:20],
     )

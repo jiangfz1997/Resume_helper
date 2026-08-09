@@ -73,6 +73,12 @@ class FilterCode(str, Enum):
     TITLE_NOT_RELEVANT = "title_not_relevant"
     DESCRIPTION_TOO_SHORT = "description_too_short"
     DESCRIPTION_MISSING = "description_missing"
+    # Excluding: the posting states a bar above max_required_years.
+    YEARS_TOO_HIGH = "years_too_high"
+    # Reviewing: the description talks about a duration years.py could not
+    # parse. Distinct from stating none at all, which is not flagged -- most
+    # postings simply omit the requirement and must not all land in review.
+    YEARS_UNPARSED = "years_unparsed"
 
 
 class ListingStatus(str, Enum):
@@ -164,6 +170,15 @@ class NormalizedJobCandidate(BaseModel):
     description_chars: int
     description_hash: str | None = None
     salary_text: str | None = None
+    # Filled by years.extract_years() and seniority.assess_seniority() during
+    # build_candidate(), which is what lets apply_hard_filters() gate on
+    # seniority before any LLM call. years_mentioned distinguishes "states no
+    # requirement" from "states one we could not parse".
+    required_years_min: int | None = None
+    required_years_max: int | None = None
+    years_mentioned: bool = False
+    is_new_grad: bool = False
+    new_grad_signals: list[str] = Field(default_factory=list)
     observed_at: datetime
     run_id: str
 
@@ -224,8 +239,18 @@ class JobRecord(BaseModel):
     description_chars: int
     description_hash: str | None = None
     salary_text: str | None = None
+    # Written once at ingest by the deterministic extractors, never by the
+    # scorer. Before 2026-08-09 both record_score() and record_requirements()
+    # wrote these from Gemini output; a scan of the live table found 93 records
+    # carrying a year and 48 carrying a coarse_score with an intersection of
+    # one, i.e. two writers filling the same field on disjoint populations.
+    # One writer, at ingest, is what makes the value trustworthy enough to
+    # filter on.
     required_years_min: int | None = None
     required_years_max: int | None = None
+    years_mentioned: bool = False
+    is_new_grad: bool = False
+    new_grad_signals: list[str] = Field(default_factory=list)
     requirement_keywords: list[str] = Field(default_factory=list)
     # Set only on a COMPANY_TITLE_LOCATION-only match: a real Lambda run
     # against TD found two different requisitions (R_1490005, R_1500633)
@@ -275,13 +300,18 @@ class ScoringProfile(BaseModel):
     target_titles: list[str] = Field(default_factory=list)
     min_years_experience: int | None = None
     location_preference: str | None = None
+    # Tilts the score toward entry-level postings. Only the score -- the
+    # is_new_grad tag itself stays deterministic (domain/seniority.py) so the
+    # dashboard filter does not depend on model output.
+    prefers_new_grad: bool = False
 
 
 class CoarseScore(BaseModel):
+    """No years fields: seniority is extracted deterministically at ingest
+    (domain/years.py) and the scorer must not overwrite it."""
+
     score: int
     reasoning: str
     model: str
     scored_at: datetime
-    required_years_min: int | None = None
-    required_years_max: int | None = None
     requirement_keywords: list[str] = Field(default_factory=list)
