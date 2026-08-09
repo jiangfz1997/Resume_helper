@@ -21,15 +21,15 @@ from candidate_profile.repositories.dynamodb import DynamoDBCandidateProfileRepo
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-_repository: DynamoDBCandidateProfileRepository | None = None
+# Built during module import rather than lazily on first request. Lambda runs
+# the INIT phase with a full-speed CPU burst regardless of MemorySize, while
+# handler code is throttled to the configured share -- constructing the boto3
+# resource here moved roughly a second off the first request of every cold
+# container. The extraction client stays lazy: only POST /applications/from-url
+# needs it, and paying for it on every cold start would slow down the reads.
+_repository = DynamoDBCandidateProfileRepository(os.environ["TABLE_NAME"])
+_repository.prewarm()
 _lambda_client: Any = None
-
-
-def _get_repository() -> DynamoDBCandidateProfileRepository:
-    global _repository
-    if _repository is None:
-        _repository = DynamoDBCandidateProfileRepository(os.environ["TABLE_NAME"])
-    return _repository
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -38,7 +38,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if os.environ.get("REQUIRE_AUTH", "true").casefold() == "true" and not claims:
         return _response(401, {"detail": "authentication required"})
     user_id = str(claims.get("sub", "local-user"))
-    repository = _get_repository()
+    repository = _repository
 
     route_key = event.get("routeKey", "")
     try:
@@ -66,10 +66,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             status = ApplicationStatus(status_param) if status_param else None
             applications = repository.list_applications(user_id, status)
             return _response(200, {"items": [application.model_dump(mode="json") for application in applications]})
-
-        if route_key == "GET /applications/stats":
-            stats = repository.get_application_stats(user_id)
-            return _response(200, stats.model_dump(mode="json"))
 
         if route_key == "GET /applications/{application_id}":
             application_id = (event.get("pathParameters") or {}).get("application_id", "")

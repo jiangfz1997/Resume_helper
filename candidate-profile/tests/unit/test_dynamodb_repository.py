@@ -52,7 +52,7 @@ def test_application_from_job_is_created_with_applied_status_and_history() -> No
 
 
 @mock_aws
-def test_status_transition_appends_history_and_stats_reflect_it() -> None:
+def test_status_transition_appends_history_and_shows_up_in_the_list() -> None:
     repository = _repository()
     application = repository.create_application_from_job(
         "user-a", CreateApplicationFromJob(company="Acme", title="SDE", jd_text="do things")
@@ -67,10 +67,9 @@ def test_status_transition_appends_history_and_stats_reflect_it() -> None:
     assert len(updated.status_history) == 2
     assert updated.status_history[-1].note == "phone screen scheduled"
 
-    stats = repository.get_application_stats("user-a")
-    assert stats.total == 1
-    assert stats.today == 1
-    assert stats.by_status["interviewing"] == 1
+    listed = repository.list_applications("user-a")
+    assert [item.status for item in listed] == [ApplicationStatus.INTERVIEWING]
+    assert repository.list_applications("user-a", ApplicationStatus.APPLIED) == []
 
     assert repository.update_application_status("user-a", "missing", ApplicationStatus.OFFER, None) is None
 
@@ -93,6 +92,13 @@ def test_pending_url_application_is_completed_by_extraction_worker() -> None:
     assert completed.company == "Acme"
     assert completed.jd_text == "full posting text"
     assert completed.extraction_status.value == "ready"
+    assert completed.raw_html == "<html>full page</html>"
+
+    # The snapshot is fetched only per application: it can run to 150KB and
+    # nothing renders it, so the list must not carry it.
+    listed = repository.list_applications("user-a")[0]
+    assert listed.raw_html is None
+    assert listed.jd_text == "full posting text"
 
 
 @mock_aws

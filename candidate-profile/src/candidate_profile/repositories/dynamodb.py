@@ -7,15 +7,15 @@ service owns candidate-side data (resume profile, application history), not
 the job-discovery crawl/score domain, so the two must be able to evolve and
 redeploy independently.
 
-All reads are primary-key reads with ConsistentRead=True; application
-listing/stats scan this user's partition and filter in Python, which is
-fine at personal-tracker volume (tens to low hundreds of applications).
+Single-item reads use ConsistentRead=True; the application list is
+eventually consistent and filters by status in Python, which is fine at
+personal-tracker volume (tens to low hundreds of applications).
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import boto3
@@ -23,7 +23,6 @@ from boto3.dynamodb.conditions import Key
 
 from candidate_profile.domain.models import (
     ApplicationSourceType,
-    ApplicationStats,
     ApplicationStatus,
     ApplicationStatusEvent,
     CandidateProfile,
@@ -38,6 +37,36 @@ from candidate_profile.domain.models import (
 # DynamoDB items are capped at 400KB; leave generous headroom for the other
 # attributes on an application item (jd_text, status history, ...).
 MAX_RAW_HTML_CHARS = 150_000
+
+# Everything the list view needs. raw_html is deliberately absent: it is a
+# page snapshot kept only for diagnosing a bad extraction, is never rendered,
+# and runs to MAX_RAW_HTML_CHARS per item -- projecting it would let a single
+# item dominate the response for no reader. get_application still returns it.
+_LIST_ATTRIBUTES = (
+    "user_id",
+    "application_id",
+    "source_type",
+    "job_id",
+    "source_url",
+    "apply_url",
+    "company",
+    "title",
+    "location",
+    "jd_text",
+    "status",
+    "status_history",
+    "extraction_status",
+    "extraction_error",
+    "notes",
+    "applied_at",
+    "created_at",
+    "updated_at",
+)
+# Every attribute is aliased, not just the ones that happen to collide today
+# ("status", "location", "source"), so extending the tuple above can never
+# silently trip over DynamoDB's reserved-word list.
+_LIST_PROJECTION_NAMES = {f"#{name}": name for name in _LIST_ATTRIBUTES}
+_LIST_PROJECTION = ", ".join(_LIST_PROJECTION_NAMES)
 
 
 def _now() -> str:
@@ -58,6 +87,19 @@ class DynamoDBCandidateProfileRepository:
     def __init__(self, table_name: str, resource: Any = None) -> None:
         dynamodb = resource or boto3.resource("dynamodb")
         self._table = dynamodb.Table(table_name)
+
+    def prewarm(self) -> None:
+        """Resolve credentials and open the TLS connection to DynamoDB.
+
+        Callers run this during Lambda's INIT phase so the first real request
+        does not pay for the handshake. Failures are swallowed on purpose: a
+        throttled or unavailable warm-up must never take the function down,
+        the request path will simply pay the cost it would have paid anyway.
+        """
+        try:
+            self._table.get_item(Key={"user_id": "__prewarm__", "entity_key": "PROFILE"})
+        except Exception:  # noqa: BLE001 - best effort, never fatal
+            pass
 
     # ── profile ──────────────────────────────────────────────
 
@@ -178,7 +220,8 @@ class DynamoDBCandidateProfileRepository:
         items = _paginated(
             self._table.query,
             KeyConditionExpression=Key("user_id").eq(user_id) & Key("entity_key").begins_with("APPLICATION#"),
-            ConsistentRead=True,
+            ProjectionExpression=_LIST_PROJECTION,
+            ExpressionAttributeNames=_LIST_PROJECTION_NAMES,
         )
         applications = [_to_application(item) for item in items]
         if status is not None:
@@ -249,18 +292,6 @@ class DynamoDBCandidateProfileRepository:
 
     def delete_application(self, user_id: str, application_id: str) -> None:
         self._table.delete_item(Key={"user_id": user_id, "entity_key": f"APPLICATION#{application_id}"})
-
-    def get_application_stats(self, user_id: str) -> ApplicationStats:
-        applications = self.list_applications(user_id)
-        now = datetime.now(timezone.utc)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=now.weekday())
-        today = sum(1 for application in applications if application.applied_at >= today_start)
-        this_week = sum(1 for application in applications if application.applied_at >= week_start)
-        by_status: dict[str, int] = {}
-        for application in applications:
-            by_status[application.status.value] = by_status.get(application.status.value, 0) + 1
-        return ApplicationStats(today=today, this_week=this_week, total=len(applications), by_status=by_status)
 
 
 def _to_profile(item: dict[str, Any]) -> CandidateProfile:

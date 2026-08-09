@@ -168,10 +168,3 @@ class ExtractedJobInfo(BaseModel):
     title: str | None = None
     location: str | None = None
     jd_text: str
-
-
-class ApplicationStats(BaseModel):
-    today: int
-    this_week: int
-    total: int
-    by_status: dict[str, int] = Field(default_factory=dict)

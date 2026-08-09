@@ -25,7 +25,6 @@ export interface JobApplication {
   title: string
   location: string | null
   jdText: string
-  rawHtml: string | null
   status: ApplicationStatus
   statusHistory: ApplicationStatusEvent[]
   extractionStatus: ExtractionStatus
@@ -36,11 +35,30 @@ export interface JobApplication {
   updatedAt: string
 }
 
+/** Derived on the client from a loaded application list, never fetched. */
 export interface ApplicationStats {
   today: number
   thisWeek: number
   total: number
   byStatus: Partial<Record<ApplicationStatus, number>>
+}
+
+/** Counts for the header tiles. Week starts Monday, in the viewer's timezone. */
+export function deriveStats(applications: JobApplication[]): ApplicationStats {
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const weekStart = new Date(todayStart)
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7))
+  const byStatus: Partial<Record<ApplicationStatus, number>> = {}
+  let today = 0
+  let thisWeek = 0
+  for (const application of applications) {
+    const appliedAt = Date.parse(application.appliedAt)
+    if (appliedAt >= todayStart.getTime()) today += 1
+    if (appliedAt >= weekStart.getTime()) thisWeek += 1
+    byStatus[application.status] = (byStatus[application.status] ?? 0) + 1
+  }
+  return { today, thisWeek, total: applications.length, byStatus }
 }
 
 export interface CreateApplicationFromJob {
@@ -62,7 +80,6 @@ export interface UpdateApplicationFields {
 
 export interface ApplicationDataSource {
   listApplications(status?: ApplicationStatus): Promise<JobApplication[]>
-  getStats(): Promise<ApplicationStats>
   createFromJob(data: CreateApplicationFromJob): Promise<JobApplication>
   createFromUrl(url: string): Promise<JobApplication>
   updateStatus(applicationId: string, status: ApplicationStatus, note?: string): Promise<JobApplication>
