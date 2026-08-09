@@ -89,7 +89,10 @@ const menuOptions: MenuOption[] = [
   // { label: 'Templates', key: '/templates' },
 ]
 
-const visibleMenuOptions = computed(() => authMode === 'cognito' ? menuOptions.slice(0, 3) : auth.isAuthenticated ? menuOptions : menuOptions.slice(0, 1))
+const visibleMenuOptions = computed(() => {
+  if (!auth.isAuthenticated) return menuOptions.slice(0, 1)
+  return authMode === 'cognito' ? menuOptions.slice(0, 3) : menuOptions
+})
 
 const themeOverrides: GlobalThemeOverrides = {
   common: { fontFamilyMono: 'monospace' },

@@ -22,11 +22,38 @@ def _load_lambda() -> ModuleType:
     return module
 
 
-def test_missing_claims_returns_401(monkeypatch) -> None:
+def test_public_list_does_not_require_claims(monkeypatch) -> None:
+    class EmptyReader:
+        def list_records(self) -> list:
+            return []
+
+        def list_all_listings(self) -> list:
+            return []
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    module = _load_lambda()
+    module._reader = EmptyReader()
+
+    response = module.lambda_handler({"routeKey": "GET /jobs"}, None)
+
+    assert response["statusCode"] == 200
+    assert response["headers"]["Cache-Control"].startswith("public")
+
+
+def test_missing_claims_cannot_access_private_route(monkeypatch) -> None:
     monkeypatch.setenv("REQUIRE_AUTH", "true")
     module = _load_lambda()
 
-    response = module.lambda_handler({"routeKey": "GET /jobs"}, None)
+    response = module.lambda_handler({"routeKey": "GET /user-state"}, None)
+
+    assert response["statusCode"] == 401
+
+
+def test_missing_claims_cannot_write_job_state(monkeypatch) -> None:
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    module = _load_lambda()
+
+    response = module.lambda_handler({"routeKey": "PUT /jobs/{job_id}/state"}, None)
 
     assert response["statusCode"] == 401
 

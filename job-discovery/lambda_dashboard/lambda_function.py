@@ -38,6 +38,12 @@ _reader: DashboardJobReader | None = None
 _state_repository: DashboardUserStateRepository | None = None
 _lambda_client: Any = None
 
+PUBLIC_ROUTES = {
+    "GET /jobs",
+    "GET /jobs/{job_id}",
+    "GET /runs",
+}
+
 
 def _get_reader() -> DashboardJobReader:
     global _reader
@@ -60,12 +66,16 @@ def _get_state_repository() -> DashboardUserStateRepository:
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     del context
-    claims = _claims(event)
-    if os.environ.get("REQUIRE_AUTH", "true").casefold() == "true" and not claims:
-        return _response(401, {"detail": "authentication required"})
-    user_id = str(claims.get("sub", "local-user"))
-
     route_key = event.get("routeKey", "")
+    claims = _claims(event)
+    if (
+        os.environ.get("REQUIRE_AUTH", "true").casefold() == "true"
+        and route_key not in PUBLIC_ROUTES
+        and not claims
+    ):
+        return _response(401, {"detail": "authentication required"})
+    user_id = str(claims.get("sub", ""))
+
     try:
         if route_key == "GET /bootstrap":
             query = _parse_query(event.get("queryStringParameters"))
@@ -73,16 +83,28 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return _response(200, bootstrap.model_dump(mode="json"))
         if route_key == "GET /jobs":
             query = _parse_query(event.get("queryStringParameters"))
-            return _response(200, list_dashboard_jobs(_get_reader(), query).model_dump(mode="json"))
+            return _response(
+                200,
+                list_dashboard_jobs(_get_reader(), query).model_dump(mode="json"),
+                cache_control="public, max-age=60, stale-while-revalidate=300",
+            )
         if route_key == "GET /jobs/{job_id}":
             job_id = UUID((event.get("pathParameters") or {}).get("job_id", ""))
             job = get_dashboard_job(_get_reader(), job_id)
             if job is None:
                 return _response(404, {"detail": "job not found"})
-            return _response(200, job.model_dump(mode="json"))
+            return _response(
+                200,
+                job.model_dump(mode="json"),
+                cache_control="public, max-age=300, stale-while-revalidate=600",
+            )
         if route_key == "GET /runs":
             reports = _get_state_repository().list_discovery_runs()
-            return _response(200, list_dashboard_runs(_get_reader(), reports).model_dump(mode="json"))
+            return _response(
+                200,
+                list_dashboard_runs(_get_reader(), reports).model_dump(mode="json"),
+                cache_control="public, max-age=60, stale-while-revalidate=300",
+            )
         if route_key == "GET /scoring/queue":
             state = _get_state_repository().get_snapshot(user_id)
             profile = _get_state_repository().get_scoring_profile(user_id)
@@ -245,10 +267,15 @@ def _invoke_crawlers(crawlers: list[str], run_id: str) -> None:
         )
 
 
-def _response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
+def _response(
+    status_code: int,
+    body: dict[str, Any],
+    *,
+    cache_control: str = "no-store",
+) -> dict[str, Any]:
     headers = {
         "Content-Type": "application/json",
-        "Cache-Control": "no-store",
+        "Cache-Control": cache_control,
     }
     allowed_origin = os.environ.get("ALLOWED_ORIGIN")
     if allowed_origin:
