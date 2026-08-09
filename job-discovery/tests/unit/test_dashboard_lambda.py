@@ -4,10 +4,11 @@ import importlib.util
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from types import ModuleType
-from uuid import UUID
+from types import ModuleType, SimpleNamespace
+from uuid import UUID, uuid4
 
-from job_discovery.dashboard.models import DashboardJobUserStatus
+from job_discovery.dashboard.models import DashboardJobUserStatus, DashboardUserStateSnapshot
+from job_discovery.domain.models import EligibilityStatus
 from job_discovery.domain.settings import ScoringProfileInput, UserScoringProfile
 
 ROOT = Path(__file__).parents[2]
@@ -157,3 +158,100 @@ def test_authenticated_user_can_queue_one_job_for_scoring(monkeypatch) -> None:
 
     assert response["statusCode"] == 202
     assert payload == {"user_ids": ["user-1"], "job_ids": [job_id], "limit": 1}
+
+
+def test_manual_run_scoring_caps_at_unscored_eligible_jobs(monkeypatch) -> None:
+    invocations: list[dict] = []
+    queued: list[UUID] = []
+    run_id = "lambda-2026-08-09T12:00Z"
+    job_ids = [uuid4() for _ in range(4)]
+    records = [
+        SimpleNamespace(
+            job_id=job_id,
+            first_discovered_run_id=run_id,
+            eligibility_status=EligibilityStatus.ELIGIBLE,
+            created_at=datetime(2026, 8, 9, 12, index, tzinfo=timezone.utc),
+        )
+        for index, job_id in enumerate(job_ids)
+    ]
+
+    class FakeReader:
+        def list_records(self) -> list:
+            return records
+
+    class FakeLambdaClient:
+        def invoke(self, **kwargs: object) -> None:
+            invocations.append(kwargs)
+
+    class FakeStateRepository:
+        def get_scoring_profile(self, user_id: str) -> UserScoringProfile:
+            return UserScoringProfile(
+                user_id=user_id, skills=["Python"], active=True, profile_version=3,
+                updated_at=datetime.now(timezone.utc),
+            )
+
+        def get_snapshot(self, user_id: str) -> DashboardUserStateSnapshot:
+            assert user_id == "user-1"
+            return DashboardUserStateSnapshot(jobs=[
+                {
+                    "job_id": job_ids[0], "updated_at": datetime.now(timezone.utc),
+                    "coarse_score": 8, "profile_version": 3,
+                },
+                {
+                    "job_id": job_ids[1], "updated_at": datetime.now(timezone.utc),
+                    "scoring_status": "queued", "scoring_profile_version": 3,
+                },
+            ])
+
+        def mark_user_score_queued(self, user_id: str, job_id: UUID, profile_version: int) -> None:
+            assert (user_id, profile_version) == ("user-1", 3)
+            queued.append(job_id)
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    monkeypatch.setenv("SCORING_FUNCTION_NAME", "job-discovery-score")
+    module = _load_lambda()
+    module._reader = FakeReader()
+    module._state_repository = FakeStateRepository()
+    module._lambda_client = FakeLambdaClient()
+    event = {
+        "routeKey": "POST /actions/scoring",
+        "body": json.dumps({"run_id": run_id, "limit": 100}),
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
+    }
+
+    response = module.lambda_handler(event, None)
+    body = json.loads(response["body"])
+    payload = json.loads(invocations[0]["Payload"].decode("utf-8"))
+
+    assert response["statusCode"] == 202
+    assert body == {"ok": True, "run_id": run_id, "eligible": 4, "remaining": 2, "queued": 2}
+    assert set(queued) == set(job_ids[2:])
+    assert set(payload["job_ids"]) == {str(job_id) for job_id in job_ids[2:]}
+    assert payload["limit"] == 2
+
+
+def test_manual_crawler_invokes_selected_functions_with_one_run_id(monkeypatch) -> None:
+    invocations: list[dict] = []
+
+    class FakeLambdaClient:
+        def invoke(self, **kwargs: object) -> None:
+            invocations.append(kwargs)
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    monkeypatch.setenv("WORKDAY_FUNCTION_NAME", "workday-function")
+    monkeypatch.setenv("JOBSPY_FUNCTION_NAME", "jobspy-function")
+    module = _load_lambda()
+    module._lambda_client = FakeLambdaClient()
+    event = {
+        "routeKey": "POST /actions/crawler",
+        "body": '{"crawler":"both"}',
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
+    }
+
+    response = module.lambda_handler(event, None)
+    body = json.loads(response["body"])
+    payloads = [json.loads(call["Payload"].decode("utf-8")) for call in invocations]
+
+    assert response["statusCode"] == 202
+    assert [call["FunctionName"] for call in invocations] == ["workday-function", "jobspy-function"]
+    assert payloads == [{"run_id": body["run_id"]}, {"run_id": body["run_id"]}]

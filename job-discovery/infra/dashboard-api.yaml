@@ -43,6 +43,12 @@ Parameters:
   SourceLookupTableName:
     Type: String
     Default: job-discovery-source-lookup
+  WorkdayFunctionName:
+    Type: String
+    Default: job-discovery-workday
+  JobSpyFunctionName:
+    Type: String
+    Default: job-discovery-jobspy
 
 Resources:
   DashboardUserPool:
@@ -165,6 +171,8 @@ Resources:
           ALLOWED_ORIGIN: !Ref AllowedOrigin
           REQUIRE_AUTH: 'true'
           SCORING_FUNCTION_NAME: !Ref PersonalizedScoringFunction
+          WORKDAY_FUNCTION_NAME: !Ref WorkdayFunctionName
+          JOBSPY_FUNCTION_NAME: !Ref JobSpyFunctionName
       Policies:
         - Statement:
             - Sid: ReadDashboardTables
@@ -189,6 +197,13 @@ Resources:
               Action:
                 - lambda:InvokeFunction
               Resource: !GetAtt PersonalizedScoringFunction.Arn
+            - Sid: InvokeDiscoveryCrawlers
+              Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource:
+                - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${WorkdayFunctionName}
+                - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${JobSpyFunctionName}
       Events:
         GetBootstrap:
           Type: HttpApi
@@ -226,6 +241,18 @@ Resources:
             ApiId: !Ref DashboardApi
             Method: POST
             Path: /jobs/{job_id}/score
+        ScoreRunNow:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: POST
+            Path: /actions/scoring
+        RunCrawlerNow:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: POST
+            Path: /actions/crawler
         GetUserState:
           Type: HttpApi
           Properties:

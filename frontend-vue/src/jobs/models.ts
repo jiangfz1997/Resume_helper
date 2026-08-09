@@ -145,6 +145,18 @@ export interface DiscoverySettings {
   updatedAt: string | null
 }
 
+export interface ManualScoringResult {
+  runId: string
+  eligible: number
+  remaining: number
+  queued: number
+}
+
+export interface ManualCrawlerResult {
+  runId: string
+  crawlers: Array<'workday' | 'jobspy'>
+}
+
 export interface DashboardJob extends DashboardJobSummary, JobRecord {
   listings: JobListing[]
   primaryListing: JobListing | null
@@ -165,6 +177,8 @@ export interface JobDataSource {
   listRuns(): Promise<DashboardRunSummary[]>
   getScoringQueue(): Promise<ScoringQueueSummary>
   scoreJob(jobId: string): Promise<void>
+  scoreRun(runId: string, limit: number): Promise<ManualScoringResult>
+  runCrawler(crawler: 'workday' | 'jobspy' | 'both'): Promise<ManualCrawlerResult>
   getUserState(): Promise<DashboardUserState>
   markJobViewed(jobId: string): Promise<void>
   setJobStatus(jobId: string, status: JobUserStatus): Promise<void>
