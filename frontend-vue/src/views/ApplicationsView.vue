@@ -157,19 +157,22 @@ const statusOptions: { label: string; value: ApplicationStatus }[] = [
 ]
 const statusFilterOptions = [{ label: 'All statuses', value: 'all' }, ...statusOptions]
 
+// Status, Applied and the action link are fixed-width so the extra page
+// width lands on Company and Title, which are the two that were wrapping.
 const columns: DataTableColumns<JobApplication> = [
-  { title: 'Company', key: 'company' },
-  { title: 'Title', key: 'title' },
+  { title: 'Company', key: 'company', ellipsis: { tooltip: true } },
+  { title: 'Title', key: 'title', ellipsis: { tooltip: true } },
   {
     title: 'Status',
     key: 'status',
+    width: 160,
     render: (row) => h(NTag, { type: statusTagType(row.status), size: 'small' }, { default: () => statusLabel(row.status) }),
   },
-  { title: 'Source', key: 'sourceType', render: (row) => (row.sourceType === 'dashboard' ? 'Dashboard' : 'Manual link') },
-  { title: 'Applied', key: 'appliedAt', render: (row) => formatDate(row.appliedAt) },
+  { title: 'Applied', key: 'appliedAt', width: 140, render: (row) => formatDate(row.appliedAt) },
   {
     title: '',
     key: 'actions',
+    width: 72,
     render: (row) => h('a', { class: 'row-link', onClick: () => openDetail(row.applicationId) }, 'View'),
   },
 ]
