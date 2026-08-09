@@ -8,6 +8,7 @@ from candidate_profile.domain.models import (
     CandidateProfileInput,
     CreateApplicationFromJob,
     ExtractedJobInfo,
+    FetchedPage,
     JobApplication,
     ApplicationStats,
     UpdateApplicationFields,
@@ -47,8 +48,14 @@ class CandidateProfileRepository(Protocol):
 
 
 class PageFetcher(Protocol):
-    def fetch(self, url: str) -> str:
-        """Return the raw HTML at ``url``. Raises PageFetchError on failure."""
+    def load(self, url: str) -> FetchedPage:
+        """Read ``url`` into text plus an optional markup snapshot.
+
+        Not "return the HTML": Workday postings are read from a JSON API
+        that has no page HTML to hand back, so the reader owns the
+        conversion and callers never detag anything themselves. Raises
+        PageFetchError on failure.
+        """
         ...
 
 
