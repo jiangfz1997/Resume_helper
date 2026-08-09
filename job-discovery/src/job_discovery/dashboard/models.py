@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -165,6 +166,15 @@ class DashboardUserStateSnapshot(BaseModel):
 
 class UpdateJobStateRequest(BaseModel):
     status: DashboardJobUserStatus
+
+
+class ManualScoringRequest(BaseModel):
+    run_id: str = Field(min_length=1, max_length=200)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class ManualCrawlerRequest(BaseModel):
+    crawler: Literal["workday", "jobspy", "both"] = "both"
 
 
 class DashboardBootstrap(BaseModel):

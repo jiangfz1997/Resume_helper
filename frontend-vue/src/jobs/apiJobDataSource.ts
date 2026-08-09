@@ -9,6 +9,8 @@ import type {
   JobCategory,
   JobDataSource,
   JobListing,
+  ManualCrawlerResult,
+  ManualScoringResult,
   JobUserStatus,
   ScoringProfileSettings,
   ScoringQueueSummary,
@@ -166,6 +168,27 @@ export class ApiJobDataSource implements JobDataSource {
     await this.request(`/jobs/${encodeURIComponent(jobId)}/score`, { method: 'POST' })
   }
 
+  async scoreRun(runId: string, limit: number): Promise<ManualScoringResult> {
+    const result = await this.request<ApiManualScoringResult>('/actions/scoring', {
+      method: 'POST',
+      body: JSON.stringify({ run_id: runId, limit }),
+    })
+    return {
+      runId: result.run_id,
+      eligible: result.eligible,
+      remaining: result.remaining,
+      queued: result.queued,
+    }
+  }
+
+  async runCrawler(crawler: 'workday' | 'jobspy' | 'both'): Promise<ManualCrawlerResult> {
+    const result = await this.request<ApiManualCrawlerResult>('/actions/crawler', {
+      method: 'POST',
+      body: JSON.stringify({ crawler }),
+    })
+    return { runId: result.run_id, crawlers: result.crawlers }
+  }
+
   async getUserState(): Promise<DashboardUserState> {
     return toUserState(await this.request<ApiUserState>('/user-state'))
   }
@@ -255,6 +278,18 @@ interface ApiScoringProfile {
   active: boolean
   profile_version: number
   updated_at: string
+}
+
+interface ApiManualScoringResult {
+  run_id: string
+  eligible: number
+  remaining: number
+  queued: number
+}
+
+interface ApiManualCrawlerResult {
+  run_id: string
+  crawlers: Array<'workday' | 'jobspy'>
 }
 
 interface ApiDiscoverySettings {

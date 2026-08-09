@@ -14,6 +14,8 @@ import type {
   JobListing,
   JobRecord,
   JobUserStatus,
+  ManualCrawlerResult,
+  ManualScoringResult,
   ScoringProfileSettings,
   ScoringQueueSummary,
   WorkplaceType,
@@ -171,6 +173,26 @@ export class MockJobDataSource implements JobDataSource {
 
   async scoreJob(jobId: string): Promise<void> {
     void jobId
+  }
+
+  async scoreRun(runId: string, limit: number): Promise<ManualScoringResult> {
+    const state = loadMockState()
+    const profile = await this.getScoringProfile()
+    const currentScores = new Set(state.jobs.filter((job) => (
+      job.coarseScore !== null && job.profileVersion === profile.profileVersion
+    ) || (
+      job.scoringStatus === 'queued' && job.scoringProfileVersion === profile.profileVersion
+    )).map((job) => job.jobId))
+    const eligible = this.jobs.filter((job) => job.firstDiscoveredRunId === runId && job.eligibilityStatus === 'eligible')
+    const remaining = eligible.filter((job) => !currentScores.has(job.jobId))
+    return { runId, eligible: eligible.length, remaining: remaining.length, queued: Math.min(limit, remaining.length) }
+  }
+
+  async runCrawler(crawler: 'workday' | 'jobspy' | 'both'): Promise<ManualCrawlerResult> {
+    return {
+      runId: `manual-${new Date().toISOString()}`,
+      crawlers: crawler === 'both' ? ['workday', 'jobspy'] : [crawler],
+    }
   }
 
   async getUserState(): Promise<DashboardUserState> {

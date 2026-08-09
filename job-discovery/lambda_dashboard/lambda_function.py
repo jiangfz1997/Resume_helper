@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import logging
 import os
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import boto3
 from pydantic import ValidationError
 
 from job_discovery.dashboard.interfaces import DashboardJobReader, DashboardUserStateRepository
-from job_discovery.dashboard.models import DashboardJobQuery, UpdateJobStateRequest
+from job_discovery.dashboard.models import (
+    DashboardJobQuery,
+    DashboardJobUserStatus,
+    ManualCrawlerRequest,
+    ManualScoringRequest,
+    UpdateJobStateRequest,
+)
 from job_discovery.dashboard.service import (
     get_dashboard_bootstrap,
     get_dashboard_job,
@@ -18,6 +25,7 @@ from job_discovery.dashboard.service import (
     list_dashboard_jobs,
     list_dashboard_runs,
 )
+from job_discovery.domain.models import EligibilityStatus
 from job_discovery.domain.settings import DiscoverySettingsInput, ScoringProfileInput
 from job_discovery.repositories.dashboard_cache import CachingDashboardJobReader
 from job_discovery.repositories.dynamodb_dashboard import DynamoDBDashboardJobReader
@@ -96,6 +104,56 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 )
                 raise
             return _response(202, {"ok": True, "status": "queued"})
+        if route_key == "POST /actions/scoring":
+            request = ManualScoringRequest.model_validate_json(event.get("body") or "{}")
+            profile = _get_state_repository().get_scoring_profile(user_id)
+            if profile is None or not profile.active:
+                return _response(409, {"detail": "an active scoring profile is required"})
+            records = [
+                record for record in _get_reader().list_records()
+                if record.first_discovered_run_id == request.run_id
+            ]
+            if not records:
+                return _response(404, {"detail": "run not found or contains no newly discovered jobs"})
+            eligible = [record for record in records if record.eligibility_status is EligibilityStatus.ELIGIBLE]
+            state_by_job = {
+                state.job_id: state for state in _get_state_repository().get_snapshot(user_id).jobs
+            }
+            candidates = []
+            for record in sorted(eligible, key=lambda item: item.created_at, reverse=True):
+                state = state_by_job.get(record.job_id)
+                if state and state.status in {DashboardJobUserStatus.APPLIED, DashboardJobUserStatus.REJECTED}:
+                    continue
+                if state and state.coarse_score is not None and state.profile_version == profile.profile_version:
+                    continue
+                if state and state.scoring_status == "queued" and state.scoring_profile_version == profile.profile_version:
+                    continue
+                candidates.append(record)
+            selected = candidates[:request.limit]
+            for record in selected:
+                _get_state_repository().mark_user_score_queued(user_id, record.job_id, profile.profile_version)
+            if selected:
+                try:
+                    _invoke_scoring_jobs(user_id, [record.job_id for record in selected])
+                except Exception as exc:
+                    for record in selected:
+                        _get_state_repository().record_user_score_failure(
+                            user_id, record.job_id, "manual-invoke", profile.profile_version, str(exc)
+                        )
+                    raise
+            return _response(202, {
+                "ok": True,
+                "run_id": request.run_id,
+                "eligible": len(eligible),
+                "remaining": len(candidates),
+                "queued": len(selected),
+            })
+        if route_key == "POST /actions/crawler":
+            request = ManualCrawlerRequest.model_validate_json(event.get("body") or "{}")
+            run_id = f"manual-{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}-{uuid4().hex[:8]}"
+            crawlers = ["workday", "jobspy"] if request.crawler == "both" else [request.crawler]
+            _invoke_crawlers(crawlers, run_id)
+            return _response(202, {"ok": True, "run_id": run_id, "crawlers": crawlers})
         if route_key == "GET /user-state":
             return _response(200, _get_state_repository().get_snapshot(user_id).model_dump(mode="json"))
         if route_key == "PUT /jobs/{job_id}/viewed":
@@ -153,14 +211,38 @@ def _claims(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _invoke_scoring(user_id: str, job_id: UUID) -> None:
+    _invoke_scoring_jobs(user_id, [job_id])
+
+
+def _invoke_scoring_jobs(user_id: str, job_ids: list[UUID]) -> None:
     global _lambda_client
     if _lambda_client is None:
         _lambda_client = boto3.client("lambda")
     _lambda_client.invoke(
         FunctionName=os.environ["SCORING_FUNCTION_NAME"],
         InvocationType="Event",
-        Payload=json.dumps({"user_ids": [user_id], "job_ids": [str(job_id)], "limit": 1}).encode("utf-8"),
+        Payload=json.dumps({
+            "user_ids": [user_id],
+            "job_ids": [str(job_id) for job_id in job_ids],
+            "limit": len(job_ids),
+        }).encode("utf-8"),
     )
+
+
+def _invoke_crawlers(crawlers: list[str], run_id: str) -> None:
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client("lambda")
+    function_names = {
+        "workday": os.environ["WORKDAY_FUNCTION_NAME"],
+        "jobspy": os.environ["JOBSPY_FUNCTION_NAME"],
+    }
+    for crawler in crawlers:
+        _lambda_client.invoke(
+            FunctionName=function_names[crawler],
+            InvocationType="Event",
+            Payload=json.dumps({"run_id": run_id}).encode("utf-8"),
+        )
 
 
 def _response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
