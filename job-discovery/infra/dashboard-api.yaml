@@ -163,7 +163,6 @@ Resources:
         - x86_64
       MemorySize: 1024
       Timeout: 10
-      ReservedConcurrentExecutions: 5
       Environment:
         Variables:
           RECORDS_TABLE: !Ref RecordsTableName
