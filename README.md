@@ -5,10 +5,14 @@ LangGraph, Vue 3, and AWS serverless services. It discovers and deduplicates new
 roles, produces profile-specific coarse scores, and turns selected job descriptions
 into tailored resume drafts. An interactive chat assistant supports further refinement.
 
-> **Service availability:** The hosted Job Search service is currently a private,
-> small-scale deployment for invited users only. Public access is disabled to keep
-> third-party crawling, LLM, and AWS usage predictable. The source code remains
-> available for self-hosting and local development.
+> **Live demo:** [Explore the public Job Board](https://tinyurl.com/jobboardnnz)
+>
+> The hosted job board is publicly available in read-only mode: anyone can browse,
+> filter, and inspect discovered roles without an account. Personalized AI scoring,
+> application tracking, scoring and discovery settings, and other write operations are
+> limited to invited Cognito users to keep LLM and AWS costs predictable and to protect
+> personal application data. The source code remains available for self-hosting and
+> local development.
 
 ## Demo
 
@@ -37,8 +41,9 @@ A job description is analyzed against the stored profile to produce the report a
   deduplication, hard filters, run summaries, and source-health visibility
 - **Per-user AI Scoring** — One shared crawl can be scored independently against each
   user's profile and preferences, either on schedule or on demand
-- **Serverless Dashboard** — Cognito-protected Vue dashboard backed by API Gateway,
-  Lambda, and DynamoDB, with saved, shortlisted, applied, and rejected states
+- **Serverless Dashboard** — Public read-only job discovery backed by CloudFront, API
+  Gateway, Lambda, and DynamoDB; Cognito unlocks personalized scoring, settings, and
+  saved, shortlisted, applied, and rejected states for invited users
 - **PDF Resume Import** — Upload your resume PDF; a two-phase LLM pipeline extracts and structures your work experience, education, projects, and skills
 - **JD Analysis & Matching** — Paste a job description to get a semantic skill match report with highlighted relevant experiences
 - **AI Resume Generation** — Single-pass LLM tailoring that preserves your actual experience while optimizing keyword coverage
@@ -56,7 +61,7 @@ A job description is analyzed against the stored profile to produce the report a
 | LLM Provider | Google Gemini (Flash / Flash Lite) by default; OpenAI or Ollama selectable per agent |
 | PDF Parsing | PyMuPDF |
 | Frontend | Vue 3, Vite, Naive UI, TypeScript |
-| Auth | JWT (python-jose), bcrypt (pwdlib) |
+| Auth | Amazon Cognito for the hosted dashboard; JWT (python-jose) and bcrypt (pwdlib) for the FastAPI application |
 | PDF Export | Playwright (headless Chromium) |
 | Job Discovery | Python, AWS Lambda, EventBridge Scheduler, DynamoDB |
 | Cloud Dashboard | S3, CloudFront, API Gateway, Cognito, AWS SAM |
@@ -92,7 +97,7 @@ job-discovery/      # Independent serverless ingestion and coarse-scoring servic
   src/job_discovery/ # Domain, sources, filters, scoring, repositories, dashboard
   lambda_workday/    # Workday crawler Lambda package
   lambda_jobspy/     # JobSpy crawler Lambda package
-  lambda_dashboard/  # Authenticated dashboard API Lambda
+  lambda_dashboard/  # Public job reads plus authenticated personal workflows
   lambda_scoring/    # Per-user Gemini coarse-scoring Lambda
   infra/              # Dashboard SAM and Discovery CloudFormation infrastructure
 agents.yaml         # Model configuration per agent
@@ -273,7 +278,8 @@ The repository contains independently deployable surfaces:
 
 - The resume application runs as the FastAPI/PostgreSQL/Vue stack described below.
 - Job Discovery crawlers run as two existing AWS Lambda functions.
-- The authenticated dashboard API and personalized scorer run in an AWS SAM stack.
+- The public-read/authenticated-write dashboard API and personalized scorer run in an
+  AWS SAM stack.
 - Candidate Profile has its own AWS SAM stack.
 - The Vue dashboard is published independently to S3 and CloudFront.
 
@@ -327,8 +333,9 @@ run the backend outside Docker.
   relevant pull-request and branch changes.
 - **Deploy discovery crawlers** publishes immutable packages and updates only the
   Workday and JobSpy Lambda functions.
-- **Deploy dashboard API** deploys the authenticated dashboard and personalized-scoring
-  SAM stack. This stack currently also owns the crawler and scoring schedules.
+- **Deploy dashboard API** deploys the public-read/authenticated-write dashboard and
+  personalized-scoring SAM stack. This stack currently also owns the crawler and
+  scoring schedules.
 - **Deploy candidate profile API** deploys the Candidate Profile SAM stack.
 - **Deploy dashboard frontend** builds Vue, publishes it to S3, and invalidates
   CloudFront after frontend changes.
