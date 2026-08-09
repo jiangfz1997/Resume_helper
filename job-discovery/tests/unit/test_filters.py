@@ -101,3 +101,89 @@ def test_classify_category_tags_qa_titles() -> None:
 
 def test_classify_category_is_none_for_unrelated_titles() -> None:
     assert classify_category("cnc machinist/programmer") is None
+
+
+YEARS_CONFIG = FilterConfig(filter_version="v1", min_description_chars=0, max_required_years=3)
+
+
+def _years_candidate(title: str, description: str):
+    return build_candidate(
+        SourceJobObservation(
+            source=SourceName.LINKEDIN,
+            source_job_id="1",
+            source_url="https://linkedin.com/jobs/view/1",
+            title_raw=title,
+            company_raw="Acme",
+            location_raw="Toronto, ON, CA",
+            description_raw=description,
+            observed_at=datetime(2026, 8, 5),
+            run_id="run-1",
+        )
+    )
+
+
+def test_posting_above_the_threshold_is_excluded() -> None:
+    decision = apply_hard_filters(
+        _years_candidate("Backend Developer", "We need 8+ years of experience."), YEARS_CONFIG
+    )
+    assert decision.status is EligibilityStatus.EXCLUDED
+    assert FilterCode.YEARS_TOO_HIGH in decision.codes
+
+
+def test_posting_at_the_threshold_is_eligible() -> None:
+    decision = apply_hard_filters(
+        _years_candidate("Backend Developer", "We need 3 years of experience."), YEARS_CONFIG
+    )
+    assert decision.status is EligibilityStatus.ELIGIBLE
+
+
+def test_new_grad_tag_does_not_rescue_a_stated_bar() -> None:
+    """A "Junior" title over a description demanding five years is a real
+    pattern in the corpus. The parsed number wins -- otherwise the tag becomes
+    a hole straight through the filter this whole feature exists to provide."""
+    decision = apply_hard_filters(
+        _years_candidate("Junior Software Developer", "You bring 5+ years of experience."), YEARS_CONFIG
+    )
+    assert decision.status is EligibilityStatus.EXCLUDED
+    assert FilterCode.YEARS_TOO_HIGH in decision.codes
+
+
+def test_new_grad_tag_rescues_an_unparsed_mention() -> None:
+    """Internships and co-ops rarely state a number; 10 of the 15 genuine
+    new-grad postings in the live table have none. Without the tag they would
+    all sit in manual review."""
+    decision = apply_hard_filters(
+        _years_candidate(
+            "Software Developer Internship/Co-op",
+            "Open to recent graduates. Several years of experience is not expected.",
+        ),
+        YEARS_CONFIG,
+    )
+    assert decision.status is EligibilityStatus.ELIGIBLE
+
+
+def test_unparsed_mention_without_a_new_grad_signal_is_review() -> None:
+    decision = apply_hard_filters(
+        _years_candidate("Backend Developer", "You bring several years of experience to the team."),
+        YEARS_CONFIG,
+    )
+    assert decision.status is EligibilityStatus.REVIEW
+    assert FilterCode.YEARS_UNPARSED in decision.codes
+
+
+def test_posting_stating_no_requirement_is_not_reviewed() -> None:
+    """Most postings simply omit the bar. Flagging all of them would bury the
+    genuinely ambiguous ones."""
+    decision = apply_hard_filters(
+        _years_candidate("Backend Developer", "Build and ship backend services with a great team."),
+        YEARS_CONFIG,
+    )
+    assert decision.status is EligibilityStatus.ELIGIBLE
+
+
+def test_threshold_unset_disables_the_gate_entirely() -> None:
+    decision = apply_hard_filters(
+        _years_candidate("Backend Developer", "We need 12+ years of experience."),
+        FilterConfig(filter_version="v1", min_description_chars=0),
+    )
+    assert decision.status is EligibilityStatus.ELIGIBLE

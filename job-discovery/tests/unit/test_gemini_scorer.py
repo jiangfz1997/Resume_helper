@@ -21,7 +21,6 @@ SAMPLE_RESPONSE = {
                     {
                         "text": (
                             '{"score": 8, "reasoning": "Strong skills overlap.", '
-                            '"required_years_min": 2, "required_years_max": null, '
                             '"requirement_keywords": ["Python", "AWS"]}'
                         )
                     }
@@ -68,7 +67,6 @@ def test_parse_score_json_plain() -> None:
     parsed = _parse_score_json('{"score": 7, "reasoning": "Good fit."}')
     assert parsed.score == 7
     assert parsed.reasoning == "Good fit."
-    assert parsed.required_years_min is None
     assert parsed.requirement_keywords == []
 
 
@@ -79,11 +77,9 @@ def test_parse_score_json_handles_markdown_fence() -> None:
 
 def test_parse_score_json_extracts_requirements() -> None:
     parsed = _parse_score_json(
-        '{"score": 9, "reasoning": "ok", "required_years_min": 3, "required_years_max": 5, '
+        '{"score": 9, "reasoning": "ok", '
         '"requirement_keywords": ["Python", "AWS", "CKA"]}'
     )
-    assert parsed.required_years_min == 3
-    assert parsed.required_years_max == 5
     assert parsed.requirement_keywords == ["Python", "AWS", "CKA"]
 
 
@@ -99,8 +95,6 @@ def test_score_end_to_end_with_monkeypatched_generate(monkeypatch: pytest.Monkey
     result = scorer.score(_job(), ScoringProfile(skills=["Python", "AWS"]))
     assert result.score == 8
     assert result.model == "fake-model"
-    assert result.required_years_min == 2
-    assert result.required_years_max is None
     assert result.requirement_keywords == ["Python", "AWS"]
 
 

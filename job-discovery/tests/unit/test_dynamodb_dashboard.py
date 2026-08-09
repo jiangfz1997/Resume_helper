@@ -14,7 +14,10 @@ from job_discovery.repositories.dynamodb import DynamoDBJobRepository
 from job_discovery.repositories.dynamodb_dashboard import DynamoDBDashboardJobReader
 from job_discovery.repositories.dynamodb_schema import create_tables
 
-LONG_DESCRIPTION = "A sufficiently detailed software engineering description. " * 200
+LONG_DESCRIPTION = (
+    "We need 3-5 years of experience building services. "
+    "A sufficiently detailed software engineering description. " * 200
+)
 
 
 def _seed(resource: object) -> DynamoDBJobRepository:
@@ -45,8 +48,6 @@ def _seed(resource: object) -> DynamoDBJobRepository:
             reasoning="Strong overlap with the target profile. " * 50,
             model="test-model",
             scored_at=observed_at,
-            required_years_min=3,
-            required_years_max=5,
             requirement_keywords=["python", "aws"],
         ),
         "test-v1",

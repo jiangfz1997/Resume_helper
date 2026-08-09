@@ -3,10 +3,10 @@ verdict -- return an EligibilityDecision instead (architecture doc 6.1:
 filtering does not delete records, it labels them, so a rule change can be
 re-applied without re-scraping).
 
-Required-years extraction is out of scope here: it needs text mining over
-the description that has not been built yet, so required_years_min/max stay
-unset on NormalizedJobCandidate and this module does not filter on them.
-Add that filter when the extractor exists rather than faking thresholds now.
+Seniority gating (max_required_years below) runs here rather than after
+scoring because rejecting an over-senior posting is the cheapest decision in
+the pipeline: domain/years.py parses the requirement from the description with
+no network call, so a job demanding eight years never costs an LLM request.
 """
 
 from __future__ import annotations
@@ -86,6 +86,11 @@ class FilterConfig(BaseModel):
     )
     review_title_keywords: list[str] = Field(default_factory=lambda: ["senior", "sr.", "lead"])
     min_description_chars: int = 300
+    # None means "no seniority restriction". When set, a posting whose parsed
+    # requirement exceeds it is EXCLUDED outright. Replaying the live table at
+    # a threshold of 3 excludes 234 of 467 records; paying to score those is
+    # the waste this filter exists to stop.
+    max_required_years: int | None = None
 
 
 def apply_hard_filters(candidate: NormalizedJobCandidate, config: FilterConfig) -> EligibilityDecision:
@@ -112,6 +117,12 @@ def apply_hard_filters(candidate: NormalizedJobCandidate, config: FilterConfig) 
     elif candidate.description_chars < config.min_description_chars:
         review_codes.append(FilterCode.DESCRIPTION_TOO_SHORT)
 
+    years_code = _years_verdict(candidate, config)
+    if years_code is FilterCode.YEARS_TOO_HIGH:
+        exclude_codes.append(years_code)
+    elif years_code is FilterCode.YEARS_UNPARSED:
+        review_codes.append(years_code)
+
     if exclude_codes:
         return EligibilityDecision(
             status=EligibilityStatus.EXCLUDED, codes=exclude_codes, filter_version=config.filter_version
@@ -121,6 +132,28 @@ def apply_hard_filters(candidate: NormalizedJobCandidate, config: FilterConfig) 
             status=EligibilityStatus.REVIEW, codes=review_codes, filter_version=config.filter_version
         )
     return EligibilityDecision(status=EligibilityStatus.ELIGIBLE, codes=[], filter_version=config.filter_version)
+
+
+def _years_verdict(candidate: NormalizedJobCandidate, config: FilterConfig) -> FilterCode | None:
+    """Exclude on a stated bar above the threshold; review only when the
+    posting mentions a duration we failed to parse.
+
+    A parsed requirement beats the new-grad tag rather than the other way
+    round. Titles saying "Junior" over a description asking for five years are
+    real, and letting the tag override an explicit number would readmit exactly
+    the postings this filter exists to remove. The tag still carries the 10 of
+    15 genuine new-grad postings that state no requirement at all: they reach
+    the `mentioned` branch below and are waved through instead of reviewed.
+    """
+    if config.max_required_years is None:
+        return None
+
+    if candidate.required_years_min is not None:
+        return FilterCode.YEARS_TOO_HIGH if candidate.required_years_min > config.max_required_years else None
+
+    if candidate.is_new_grad:
+        return None
+    return FilterCode.YEARS_UNPARSED if candidate.years_mentioned else None
 
 
 def _location_ok(candidate: NormalizedJobCandidate, config: FilterConfig) -> bool:

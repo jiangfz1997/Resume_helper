@@ -86,6 +86,11 @@ def _record_to_item(record: JobRecord) -> dict[str, Any]:
             "salary_text": record.salary_text,
             "required_years_min": record.required_years_min,
             "required_years_max": record.required_years_max,
+            # _strip_none() drops falsey-but-meaningful values only when they
+            # are None, so False survives here and the attribute stays present.
+            "years_mentioned": record.years_mentioned,
+            "is_new_grad": record.is_new_grad,
+            "new_grad_signals": record.new_grad_signals,
             "requirement_keywords": record.requirement_keywords,
             "possible_duplicate_of": str(record.possible_duplicate_of) if record.possible_duplicate_of else None,
             "duplicate_matched_by": record.duplicate_matched_by.value if record.duplicate_matched_by else None,
@@ -119,6 +124,9 @@ def _item_to_record(item: dict[str, Any]) -> JobRecord:
         salary_text=item.get("salary_text"),
         required_years_min=_int_or_none(item.get("required_years_min")),
         required_years_max=_int_or_none(item.get("required_years_max")),
+        years_mentioned=bool(item.get("years_mentioned", False)),
+        is_new_grad=bool(item.get("is_new_grad", False)),
+        new_grad_signals=list(item.get("new_grad_signals", [])),
         requirement_keywords=list(item.get("requirement_keywords", [])),
         possible_duplicate_of=UUID(item["possible_duplicate_of"]) if item.get("possible_duplicate_of") else None,
         duplicate_matched_by=DedupKeyKind(item["duplicate_matched_by"]) if item.get("duplicate_matched_by") else None,
@@ -286,12 +294,7 @@ class DynamoDBJobRepository(JobRepository):
         # Mirrors memory.py's record_score: only overwrite the JD-extracted
         # fields when Gemini actually returned them, so a scorer that omits
         # this part of the schema doesn't wipe a value set by an earlier run.
-        if score.required_years_min is not None:
-            set_clauses.append("required_years_min = :rym")
-            values[":rym"] = score.required_years_min
-        if score.required_years_max is not None:
-            set_clauses.append("required_years_max = :ryx")
-            values[":ryx"] = score.required_years_max
+        # required_years_* is no longer among them -- ingest owns it.
         if score.requirement_keywords:
             set_clauses.append("requirement_keywords = :rk")
             values[":rk"] = score.requirement_keywords
@@ -313,12 +316,6 @@ class DynamoDBJobRepository(JobRepository):
 
         set_clauses: list[str] = []
         values: dict[str, Any] = {}
-        if score.required_years_min is not None:
-            set_clauses.append("required_years_min = :minimum")
-            values[":minimum"] = score.required_years_min
-        if score.required_years_max is not None:
-            set_clauses.append("required_years_max = :maximum")
-            values[":maximum"] = score.required_years_max
         if score.requirement_keywords:
             set_clauses.append("requirement_keywords = :keywords")
             values[":keywords"] = score.requirement_keywords
@@ -441,6 +438,11 @@ class DynamoDBJobRepository(JobRepository):
             description_chars=candidate.description_chars,
             description_hash=candidate.description_hash,
             salary_text=candidate.salary_text,
+            required_years_min=candidate.required_years_min,
+            required_years_max=candidate.required_years_max,
+            years_mentioned=candidate.years_mentioned,
+            is_new_grad=candidate.is_new_grad,
+            new_grad_signals=candidate.new_grad_signals,
             job_category=category,
             possible_duplicate_of=possible_duplicate_of,
             duplicate_matched_by=DedupKeyKind.COMPANY_TITLE_LOCATION if possible_duplicate_of else None,

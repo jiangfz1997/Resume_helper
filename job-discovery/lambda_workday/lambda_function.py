@@ -93,6 +93,7 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
         "exclude_title_keywords": settings.exclude_title_keywords,
         "review_title_keywords": settings.review_title_keywords,
         "min_description_chars": settings.min_description_chars,
+        "max_required_years": settings.max_required_years,
     }
     filter_config = FilterConfig(**filter_kwargs)
 

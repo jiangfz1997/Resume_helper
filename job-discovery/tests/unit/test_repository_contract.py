@@ -256,9 +256,19 @@ def test_record_score_updates_the_record(repository) -> None:
     assert record.score_version == "v1"
 
 
-def test_record_score_persists_jd_requirements(repository) -> None:
+def test_record_score_persists_keywords_without_touching_ingest_years(repository) -> None:
+    """The scorer owns requirement_keywords; ingest owns the years. Two
+    writers on required_years_* left the live table with 93 records carrying a
+    year and 48 carrying a score, overlapping on one -- scoring must not be
+    able to move a value the seniority filter depends on."""
     result = ingest_observation(
-        _observation(SourceName.WORKDAY, "R_1", None, datetime(2026, 8, 5, 9, 0), description="x" * 500),
+        _observation(
+            SourceName.WORKDAY,
+            "R_1",
+            None,
+            datetime(2026, 8, 5, 9, 0),
+            description="Requires 2-5 years of professional experience. " + "x" * 500,
+        ),
         repository,
         CONFIG,
     )
@@ -269,8 +279,6 @@ def test_record_score_persists_jd_requirements(repository) -> None:
             reasoning="good fit",
             model="fake-model",
             scored_at=datetime(2026, 8, 5, 10, 0),
-            required_years_min=2,
-            required_years_max=5,
             requirement_keywords=["Python", "AWS"],
         ),
         score_version="v1",
@@ -292,12 +300,11 @@ def test_record_requirements_does_not_write_a_shared_fit_score(repository) -> No
         result.job_id,
         CoarseScore(
             score=9, reasoning="personal fit", model="fake-model", scored_at=datetime(2026, 8, 5, 10, 0),
-            required_years_min=3, required_years_max=5, requirement_keywords=["Python", "AWS"],
+            requirement_keywords=["Python", "AWS"],
         ),
     )
     record = repository.get_record(result.job_id)
     assert record is not None
-    assert record.required_years_min == 3
     assert record.requirement_keywords == ["Python", "AWS"]
     assert record.coarse_score is None
 
@@ -316,6 +323,7 @@ def test_record_requirements_raises_for_unknown_job(repository) -> None:
         repository.record_requirements(
             UUID("00000000-0000-0000-0000-000000000000"),
             CoarseScore(
-                score=5, reasoning="x", model="m", scored_at=datetime(2026, 8, 5), required_years_min=2
+                score=5, reasoning="x", model="m", scored_at=datetime(2026, 8, 5),
+                requirement_keywords=["Python"],
             ),
         )
