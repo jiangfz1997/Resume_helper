@@ -10,7 +10,13 @@ from uuid import uuid4
 import pytest
 
 from job_discovery.domain.models import EligibilityStatus, JobRecord, ScoringProfile, WorkplaceType
-from job_discovery.scoring.gemini_scorer import GeminiCoarseScorer, GeminiScoringError, _extract_text, _parse_score_json
+from job_discovery.scoring.gemini_scorer import (
+    GeminiCoarseScorer,
+    GeminiScoringError,
+    _extract_text,
+    _parse_score_json,
+    _required_years_text,
+)
 
 # Shape matches the documented Generative Language API generateContent response.
 SAMPLE_RESPONSE = {
@@ -116,3 +122,44 @@ def test_missing_model_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     with pytest.raises(GeminiScoringError):
         GeminiCoarseScorer(api_key="fake-key", model=None)
+
+
+def test_prompt_states_the_extracted_requirement_and_the_experience_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The model used to infer the years requirement from the description and
+    read a satisfied one as a plus. Both now arrive as explicit instructions."""
+    scorer = GeminiCoarseScorer(api_key="fake-key", model="fake-model")
+    prompts: list[str] = []
+    monkeypatch.setattr(scorer, "_generate", lambda prompt: prompts.append(prompt) or SAMPLE_RESPONSE)
+    job = _job()
+    job.required_years_min = 5
+    job.required_years_max = 8
+
+    scorer.score(job, ScoringProfile(skills=["Python"], min_years_experience=3))
+
+    assert "Experience the posting demands: 5-8 years" in prompts[0]
+    assert "Candidate years of professional experience: 3" in prompts[0]
+    assert "Score 3 or lower when the demanded experience exceeds" in prompts[0]
+
+
+def test_prompt_drops_the_experience_rule_when_the_candidate_states_no_years(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scorer = GeminiCoarseScorer(api_key="fake-key", model="fake-model")
+    prompts: list[str] = []
+    monkeypatch.setattr(scorer, "_generate", lambda prompt: prompts.append(prompt) or SAMPLE_RESPONSE)
+
+    scorer.score(_job(), ScoringProfile(skills=["Python"]))
+
+    assert "Candidate years of professional experience: unspecified" in prompts[0]
+    assert "do not weight it heavily" in prompts[0]
+    assert "Score 3 or lower" not in prompts[0]
+
+
+def test_open_ended_requirement_renders_as_a_floor() -> None:
+    job = _job()
+    job.required_years_min = 5
+    assert _required_years_text(job) == "5+ years"
+    job.required_years_max = 5
+    assert _required_years_text(job) == "5+ years"
