@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from typing import Any
+from urllib.parse import unquote
 from uuid import UUID, uuid4
 
 import boto3
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 
 from job_discovery.dashboard.interfaces import DashboardJobReader, DashboardUserStateRepository
 from job_discovery.dashboard.models import (
+    BlockCompanyRequest,
     DashboardJobQuery,
     DashboardJobUserStatus,
     ManualCrawlerRequest,
@@ -83,10 +85,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return _response(200, bootstrap.model_dump(mode="json"))
         if route_key == "GET /jobs":
             query = _parse_query(event.get("queryStringParameters"))
+            # A signed-in caller gets their blocklist applied, which makes the
+            # response personal and therefore uncacheable by CloudFront.
+            blocked = _get_state_repository().list_blocked_companies(user_id) if user_id else []
             return _response(
                 200,
-                list_dashboard_jobs(_get_reader(), query).model_dump(mode="json"),
-                cache_control="public, max-age=60, stale-while-revalidate=300",
+                list_dashboard_jobs(_get_reader(), query, blocked).model_dump(mode="json"),
+                cache_control="no-store" if user_id else "public, max-age=60, stale-while-revalidate=300",
             )
         if route_key == "GET /jobs/{job_id}":
             job_id = UUID((event.get("pathParameters") or {}).get("job_id", ""))
@@ -108,7 +113,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if route_key == "GET /scoring/queue":
             state = _get_state_repository().get_snapshot(user_id)
             profile = _get_state_repository().get_scoring_profile(user_id)
-            queue = get_scoring_queue(_get_reader(), state.jobs, profile.profile_version if profile else None)
+            queue = get_scoring_queue(
+                _get_reader(),
+                state.jobs,
+                profile.profile_version if profile else None,
+                _get_state_repository().list_blocked_companies(user_id),
+            )
             return _response(200, queue.model_dump(mode="json"))
         if route_key == "POST /jobs/{job_id}/score":
             job_id = UUID((event.get("pathParameters") or {}).get("job_id", ""))
@@ -193,6 +203,19 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 raise ValueError("run_id is required")
             _get_state_repository().mark_run_viewed(user_id, run_id)
             return _response(200, {"ok": True})
+        if route_key == "GET /blocked-companies":
+            companies = _get_state_repository().list_blocked_companies(user_id)
+            return _response(200, {"companies": companies})
+        if route_key == "POST /blocked-companies":
+            request = BlockCompanyRequest.model_validate_json(event.get("body") or "{}")
+            companies = _get_state_repository().block_company(user_id, request.company)
+            return _response(200, {"companies": companies})
+        if route_key == "DELETE /blocked-companies/{company}":
+            company = unquote((event.get("pathParameters") or {}).get("company", "")).strip()
+            if not company:
+                raise ValueError("company is required")
+            companies = _get_state_repository().unblock_company(user_id, company)
+            return _response(200, {"companies": companies})
         if route_key == "GET /profile/scoring":
             profile = _get_state_repository().get_scoring_profile(user_id)
             return _response(200, {"profile": profile.model_dump(mode="json") if profile else None})

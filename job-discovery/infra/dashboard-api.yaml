@@ -136,6 +136,7 @@ Resources:
           - GET
           - POST
           - PUT
+          - DELETE
         MaxAge: 600
       DefaultRouteSettings:
         ThrottlingBurstLimit: 5
@@ -284,6 +285,24 @@ Resources:
             ApiId: !Ref DashboardApi
             Method: PUT
             Path: /runs/{run_id}/viewed
+        ListBlockedCompanies:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: GET
+            Path: /blocked-companies
+        BlockCompany:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: POST
+            Path: /blocked-companies
+        UnblockCompany:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashboardApi
+            Method: DELETE
+            Path: /blocked-companies/{company}
         GetScoringProfile:
           Type: HttpApi
           Properties:

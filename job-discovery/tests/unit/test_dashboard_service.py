@@ -219,6 +219,36 @@ def test_archived_jobs_are_excluded_from_scoring_queue() -> None:
     assert queue.archived_skipped == 1
 
 
+def test_blocked_company_leaves_the_list_and_the_scoring_queue() -> None:
+    blocked = _record("Backend Engineer", None)
+    blocked.canonical_company = "Jobright.ai"
+    kept = _record("QA Engineer", None)
+    kept.canonical_company = "Jobright Media"
+    reader = FakeDashboardReader(
+        [blocked, kept], [_listing(blocked, SourceName.INDEED), _listing(kept, SourceName.INDEED)]
+    )
+
+    page = list_dashboard_jobs(reader, DashboardJobQuery(), ["jobright.ai"])
+    queue = get_scoring_queue(reader, [], profile_version=1, blocked_companies=["jobright.ai"])
+
+    # Exact match after normalization: a company that merely starts with the
+    # blocked name stays visible.
+    assert [job.company for job in page.items] == ["Jobright Media"]
+    assert page.total == 1
+    assert queue.eligible_total == 1
+    assert queue.pending == 1
+
+
+def test_blocking_is_case_and_whitespace_insensitive() -> None:
+    record = _record("Backend Engineer", None)
+    record.canonical_company = "  Jobright.AI  "
+    reader = FakeDashboardReader([record], [_listing(record, SourceName.INDEED)])
+
+    page = list_dashboard_jobs(reader, DashboardJobQuery(), ["jobright.ai"])
+
+    assert page.items == []
+
+
 class CountingStateRepository:
     def __init__(
         self,
@@ -229,12 +259,18 @@ class CountingStateRepository:
         self.snapshot = snapshot
         self.profile = profile
         self.reports = reports
+        self.blocked_companies: list[str] = []
         self.snapshot_calls = 0
         self.profile_calls = 0
+        self.blocklist_calls = 0
 
     def get_snapshot(self, user_id: str) -> DashboardUserStateSnapshot:
         self.snapshot_calls += 1
         return self.snapshot
+
+    def list_blocked_companies(self, user_id: str) -> list[str]:
+        self.blocklist_calls += 1
+        return self.blocked_companies
 
     def get_scoring_profile(self, user_id: str) -> UserScoringProfile | None:
         self.profile_calls += 1
@@ -278,6 +314,18 @@ def test_bootstrap_reads_user_state_and_profile_once() -> None:
 
     assert repository.snapshot_calls == 1
     assert repository.profile_calls == 1
+    assert repository.blocklist_calls == 1
+
+
+def test_bootstrap_hides_blocked_companies_and_reports_them() -> None:
+    reader, repository = _bootstrap_fixtures()
+    repository.blocked_companies = ["example"]
+
+    bootstrap = get_dashboard_bootstrap(reader, repository, "user-1", DashboardJobQuery())
+
+    assert bootstrap.jobs.items == []
+    assert bootstrap.blocked_companies == ["example"]
+    assert bootstrap.scoring_queue.eligible_total == 0
 
 
 def test_bootstrap_scans_each_table_once_behind_the_cache() -> None:

@@ -80,6 +80,11 @@
                 :title="statusFor(job.jobId) === 'rejected' ? 'Restore' : 'Not interested'"
                 @click.stop="toggleStatus(job.jobId, 'rejected')"
               >{{ statusFor(job.jobId) === 'rejected' ? '↩' : '✕' }}</button>
+              <button
+                v-if="auth.isAuthenticated"
+                :title="`Block ${job.company} — hide every current and future posting`"
+                @click.stop="blockCompany(job.company)"
+              >⊘</button>
             </div>
             <div v-if="auth.isAuthenticated" :class="['score', scoreClass(scoreFor(job.jobId))]"><b>{{ scoreFor(job.jobId) ?? '—' }}</b><small>/ 10</small></div>
           </div>
@@ -97,6 +102,7 @@
           <n-button :type="statusFor(selectedJob.jobId) === 'selected' ? 'success' : 'default'" @click="toggleStatus(selectedJob.jobId, 'selected')">{{ statusFor(selectedJob.jobId) === 'selected' ? 'In shortlist' : 'Shortlist' }}</n-button>
           <n-button :type="statusFor(selectedJob.jobId) === 'applied' ? 'success' : 'default'" @click="toggleStatus(selectedJob.jobId, 'applied')">{{ statusFor(selectedJob.jobId) === 'applied' ? 'Applied' : 'Mark applied' }}</n-button>
           <n-button quaternary type="error" @click="toggleStatus(selectedJob.jobId, 'rejected')">{{ statusFor(selectedJob.jobId) === 'rejected' ? 'Restore' : 'Reject' }}</n-button>
+          <n-button quaternary type="error" @click="blockCompany(selectedJob.company)">Block company</n-button>
           <n-button v-if="scoreFor(selectedJob.jobId) === null" :disabled="isScoreQueued(selectedJob.jobId)" @click="queueScore(selectedJob.jobId)">{{ isScoreQueued(selectedJob.jobId) ? 'Queued' : scoringAttemptFor(selectedJob.jobId)?.scoringStatus === 'failed' ? 'Retry score' : 'Score now' }}</n-button>
           <n-button type="primary" class="generate" @click="sendToGenerate(selectedJob)">Generate resume</n-button>
         </div>
@@ -169,8 +175,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useMessage } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import { applicationDataSource } from '../applications/dataSource'
+import { normalizeCompany } from '../jobs/company'
 import { jobDataSource } from '../jobs/dataSource'
 import type { DashboardJob, DashboardJobSummary, DashboardRunSummary, DashboardUserState, JobUserState, JobUserStatus, ScoringQueueSummary, WorkplaceType } from '../jobs/models'
 import { useAuthStore } from '../stores/auth'
@@ -181,6 +189,7 @@ type DescriptionBlock =
   | { type: 'list'; items: string[] }
 
 const router = useRouter()
+const message = useMessage()
 const auth = useAuthStore()
 const jobs = ref<DashboardJobSummary[]>([])
 const runs = ref<DashboardRunSummary[]>([])
@@ -193,6 +202,7 @@ const selectedJob = ref<DashboardJob | null>(null)
 const currentProfileVersion = ref<number | null>(null)
 const scoringQueue = ref<ScoringQueueSummary>({ eligibleTotal: 0, scoredCurrent: 0, pending: 0, queued: 0, failed: 0, archivedSkipped: 0 })
 const queuedJobIds = ref(new Set<string>())
+const blockedCompanies = ref(new Set<string>())
 const search = ref('')
 const category = ref('all')
 const runFilter = ref('all')
@@ -218,6 +228,9 @@ const unviewedCount = computed(() => jobs.value.filter((job) => job.eligibilityS
 const unreadRunCount = computed(() => runs.value.filter((run) => !isRunViewed(run.runId)).length)
 const selectedRunSummary = computed(() => runFilter.value === 'all' ? runs.value[0] ?? null : runs.value.find((run) => run.runId === runFilter.value) ?? null)
 const visibleJobs = computed(() => jobs.value.filter((job) => {
+  // The API already drops blocked companies; this keeps a freshly blocked one
+  // from lingering until the next page load.
+  if (blockedCompanies.value.has(normalizeCompany(job.company))) return false
   const query = search.value.trim().toLowerCase()
   if (query && !`${job.title} ${job.company} ${job.location}`.toLowerCase().includes(query)) return false
   if (category.value !== 'all' && job.jobCategory !== category.value) return false
@@ -254,6 +267,7 @@ onMounted(async () => {
     userState.value = bootstrap.userState
     currentProfileVersion.value = bootstrap.scoringProfile.profileVersion
     scoringQueue.value = bootstrap.scoringQueue
+    blockedCompanies.value = new Set(bootstrap.blockedCompanies)
   } catch (reason) {
     loadError.value = reason instanceof Error ? reason.message : 'Unable to load jobs.'
   } finally {
@@ -392,6 +406,18 @@ async function toggleStatus(jobId: string, value: Exclude<JobUserStatus, 'new'>)
   markJobViewedLocally(jobId)
   userState.value = { ...userState.value, jobs: userState.value.jobs.map((job) => job.jobId === jobId ? { ...job, status: nextStatus, updatedAt: new Date().toISOString() } : job) }
   if (nextStatus === 'applied' && selectedJob.value?.jobId === jobId) recordApplication(selectedJob.value)
+}
+
+async function blockCompany(company: string): Promise<void> {
+  const previous = blockedCompanies.value
+  blockedCompanies.value = new Set([...previous, normalizeCompany(company)])
+  try {
+    blockedCompanies.value = new Set(await jobDataSource.blockCompany(company))
+    message.success(`${company} is blocked. Undo it under Settings.`)
+  } catch (reason) {
+    blockedCompanies.value = previous
+    message.error(reason instanceof Error ? reason.message : `Unable to block ${company}.`)
+  }
 }
 
 // Best-effort: a failure here must never block the job-status toggle above,

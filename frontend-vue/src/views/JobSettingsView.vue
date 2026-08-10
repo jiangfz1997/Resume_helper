@@ -26,6 +26,20 @@
         <footer><small>{{ profileMeta }}</small><n-button type="primary" :loading="savingProfile" @click="saveProfile">Save my profile</n-button></footer>
       </n-card>
 
+      <n-card title="Blocked companies" size="small">
+        <p class="hint">Yours alone. Their postings are hidden from your inbox and never sent for scoring; other accounts still see them.</p>
+        <n-empty v-if="!blockedCompanies.length" description="Nothing blocked yet. Use the ⊘ button on any role." size="small" />
+        <div v-else class="blocked-list">
+          <n-tag
+            v-for="company in blockedCompanies"
+            :key="company"
+            closable
+            :disabled="unblocking === company"
+            @close="unblockCompany(company)"
+          >{{ company }}</n-tag>
+        </div>
+      </n-card>
+
       <n-card title="Shared discovery settings" size="small">
         <n-alert type="warning" :show-icon="false" class="shared-warning">Changes here affect both users. They are picked up by the next crawler run.</n-alert>
         <n-form label-placement="top">
@@ -103,6 +117,8 @@ const includeKeywords = ref('')
 const excludeKeywords = ref('')
 const reviewKeywords = ref('')
 const runs = ref<DashboardRunSummary[]>([])
+const blockedCompanies = ref<string[]>([])
+const unblocking = ref('')
 const scoringRunId = ref<string | null>(null)
 const scoringLimit = ref(20)
 const crawler = ref<'workday' | 'jobspy' | 'both'>('both')
@@ -122,8 +138,9 @@ const discoveryMeta = computed(() => discovery.value.configVersion ? `Shared con
 
 onMounted(async () => {
   try {
-    const [loadedProfile, loadedDiscovery, loadedRuns] = await Promise.all([jobDataSource.getScoringProfile(), jobDataSource.getDiscoverySettings(), jobDataSource.listRuns()])
+    const [loadedProfile, loadedDiscovery, loadedRuns, loadedBlocklist] = await Promise.all([jobDataSource.getScoringProfile(), jobDataSource.getDiscoverySettings(), jobDataSource.listRuns(), jobDataSource.listBlockedCompanies()])
     profile.value = loadedProfile
+    blockedCompanies.value = loadedBlocklist
     discovery.value = loadedDiscovery
     profileSkills.value = loadedProfile.skills.join(', ')
     profileTitles.value = loadedProfile.targetTitles.join(', ')
@@ -170,6 +187,18 @@ async function saveDiscovery(): Promise<void> {
   }
 }
 
+async function unblockCompany(company: string): Promise<void> {
+  unblocking.value = company
+  try {
+    blockedCompanies.value = await jobDataSource.unblockCompany(company)
+    message.success(`${company} is visible again.`)
+  } catch (reason) {
+    message.error(reason instanceof Error ? reason.message : `Unable to unblock ${company}.`)
+  } finally {
+    unblocking.value = ''
+  }
+}
+
 async function runScoring(): Promise<void> {
   if (!scoringRunId.value) return
   runningScoring.value = true
@@ -204,5 +233,5 @@ function emptyDiscovery(): DiscoverySettings { return { searchTerms: [], jobspyL
 </script>
 
 <style scoped>
-.settings-page{min-height:calc(100vh - 56px);padding:36px;color:#edf1f7;background:radial-gradient(circle at 8% -15%,rgba(58,121,255,.15),transparent 32%),#0b0d12;box-sizing:border-box}.settings-page>header,.settings-grid{max-width:1280px;margin:auto}.settings-page>header{margin-bottom:24px}.eyebrow{color:#6fa8ff;font:700 10px/1.3 monospace;letter-spacing:.16em}.settings-page h1{margin:8px 0 6px;font-size:34px;letter-spacing:-.035em}.settings-page header p,.hint{margin:0;color:#8e98a9;font-size:13px}.settings-grid{display:grid;grid-template-columns:minmax(360px,.8fr) minmax(500px,1.2fr);gap:16px}.hint{margin-bottom:18px}.shared-warning{margin-bottom:18px}.two-column,.three-column,.manual-grid{display:grid;gap:12px}.two-column{grid-template-columns:1fr 1fr}.three-column{grid-template-columns:1fr 1fr 1fr}.manual-actions{grid-column:1/-1}.manual-grid{grid-template-columns:1fr 1fr;gap:32px}.manual-grid section+section{padding-left:32px;border-left:1px solid rgba(255,255,255,.08)}.manual-grid h3{margin:0 0 8px;font-size:16px}.settings-grid footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}.settings-grid footer small{color:#687487}.loading{display:grid;place-items:center;height:400px}@media(max-width:980px){.settings-grid{grid-template-columns:1fr}.settings-page{padding:24px 18px}}@media(max-width:650px){.two-column,.three-column,.manual-grid{grid-template-columns:1fr}.manual-grid section+section{padding:24px 0 0;border-top:1px solid rgba(255,255,255,.08);border-left:0}}
+.settings-page{min-height:calc(100vh - 56px);padding:36px;color:#edf1f7;background:radial-gradient(circle at 8% -15%,rgba(58,121,255,.15),transparent 32%),#0b0d12;box-sizing:border-box}.settings-page>header,.settings-grid{max-width:1280px;margin:auto}.settings-page>header{margin-bottom:24px}.eyebrow{color:#6fa8ff;font:700 10px/1.3 monospace;letter-spacing:.16em}.settings-page h1{margin:8px 0 6px;font-size:34px;letter-spacing:-.035em}.settings-page header p,.hint{margin:0;color:#8e98a9;font-size:13px}.settings-grid{display:grid;grid-template-columns:minmax(360px,.8fr) minmax(500px,1.2fr);gap:16px}.hint{margin-bottom:18px}.shared-warning{margin-bottom:18px}.blocked-list{display:flex;flex-wrap:wrap;gap:8px}.two-column,.three-column,.manual-grid{display:grid;gap:12px}.two-column{grid-template-columns:1fr 1fr}.three-column{grid-template-columns:1fr 1fr 1fr}.manual-actions{grid-column:1/-1}.manual-grid{grid-template-columns:1fr 1fr;gap:32px}.manual-grid section+section{padding-left:32px;border-left:1px solid rgba(255,255,255,.08)}.manual-grid h3{margin:0 0 8px;font-size:16px}.settings-grid footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}.settings-grid footer small{color:#687487}.loading{display:grid;place-items:center;height:400px}@media(max-width:980px){.settings-grid{grid-template-columns:1fr}.settings-page{padding:24px 18px}}@media(max-width:650px){.two-column,.three-column,.manual-grid{grid-template-columns:1fr}.manual-grid section+section{padding:24px 0 0;border-top:1px solid rgba(255,255,255,.08);border-left:0}}
 </style>

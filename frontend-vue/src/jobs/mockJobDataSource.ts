@@ -1,6 +1,7 @@
 import listingsCsv from '../mocks/job-listings.csv?raw'
 import recordsCsv from '../mocks/job-records.csv?raw'
 import { classifyJobCategory } from './category'
+import { normalizeCompany } from './company'
 import { cleanExportedString, nullableString, parseCsv } from './csv'
 import type {
   DashboardBootstrap,
@@ -129,14 +130,16 @@ export class MockJobDataSource implements JobDataSource {
   }
 
   async getBootstrap(): Promise<DashboardBootstrap> {
-    const [jobs, runs, userState, scoringProfile, scoringQueue] = await Promise.all([
+    const [jobs, runs, userState, scoringProfile, scoringQueue, blockedCompanies] = await Promise.all([
       this.listJobs(), this.listRuns(), this.getUserState(), this.getScoringProfile(), this.getScoringQueue(),
+      this.listBlockedCompanies(),
     ])
-    return { jobs, runs, userState, scoringProfile, scoringQueue }
+    return { jobs, runs, userState, scoringProfile, scoringQueue, blockedCompanies }
   }
 
   async listJobs(): Promise<DashboardJobSummary[]> {
-    return this.jobs
+    const blocked = new Set(await this.listBlockedCompanies())
+    return this.jobs.filter((job) => !blocked.has(normalizeCompany(job.company)))
   }
 
   async getJob(jobId: string): Promise<DashboardJob | null> {
@@ -236,6 +239,22 @@ export class MockJobDataSource implements JobDataSource {
     saveMockState(state)
   }
 
+  async listBlockedCompanies(): Promise<string[]> {
+    return loadSetting<string[]>(MOCK_BLOCKLIST_KEY, [])
+  }
+
+  async blockCompany(company: string): Promise<string[]> {
+    const blocked = new Set(await this.listBlockedCompanies())
+    blocked.add(normalizeCompany(company))
+    return saveBlocklist(blocked)
+  }
+
+  async unblockCompany(company: string): Promise<string[]> {
+    const blocked = new Set(await this.listBlockedCompanies())
+    blocked.delete(normalizeCompany(company))
+    return saveBlocklist(blocked)
+  }
+
   async getScoringProfile(): Promise<ScoringProfileSettings> {
     return loadSetting(MOCK_PROFILE_KEY, emptyMockProfile())
   }
@@ -260,6 +279,13 @@ export class MockJobDataSource implements JobDataSource {
 const MOCK_STATE_KEY = 'job-dashboard:user-state:v2'
 const MOCK_PROFILE_KEY = 'job-dashboard:scoring-profile:v1'
 const MOCK_DISCOVERY_KEY = 'job-dashboard:discovery-settings:v1'
+const MOCK_BLOCKLIST_KEY = 'job-dashboard:blocked-companies:v1'
+
+function saveBlocklist(companies: Set<string>): string[] {
+  const sorted = [...companies].sort()
+  localStorage.setItem(MOCK_BLOCKLIST_KEY, JSON.stringify(sorted))
+  return sorted
+}
 
 function legacyRunId(createdAt: string): string {
   const date = new Date(createdAt)

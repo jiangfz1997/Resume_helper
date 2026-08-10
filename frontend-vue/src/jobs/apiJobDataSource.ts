@@ -93,6 +93,11 @@ interface ApiBootstrap {
   user_state: ApiUserState
   scoring_profile: ApiScoringProfile | null
   scoring_queue: ApiScoringQueue
+  blocked_companies?: string[] | null
+}
+
+interface ApiCompanyBlocklist {
+  companies: string[]
 }
 
 interface ApiUserState {
@@ -127,6 +132,7 @@ export class ApiJobDataSource implements JobDataSource {
         userState: { jobs: [], runs: [] },
         scoringProfile: emptyScoringProfile(),
         scoringQueue: { eligibleTotal: 0, scoredCurrent: 0, pending: 0, queued: 0, failed: 0, archivedSkipped: 0 },
+        blockedCompanies: [],
       }
     }
     try {
@@ -137,16 +143,18 @@ export class ApiJobDataSource implements JobDataSource {
         userState: toUserState(payload.user_state),
         scoringProfile: payload.scoring_profile ? toScoringProfile(payload.scoring_profile) : emptyScoringProfile(),
         scoringQueue: toScoringQueue(payload.scoring_queue),
+        blockedCompanies: payload.blocked_companies ?? [],
       }
     } catch (error) {
       // Frontend and API deploy as separate workflows in one concurrency
       // group, so a frontend that lands first would 404 here and fail the
       // whole first paint. Drop this fallback once /bootstrap is live.
       if (!(error instanceof JobApiError) || error.status !== 404) throw error
-      const [jobs, runs, userState, scoringProfile, scoringQueue] = await Promise.all([
+      const [jobs, runs, userState, scoringProfile, scoringQueue, blockedCompanies] = await Promise.all([
         this.listJobs(), this.listRuns(), this.getUserState(), this.getScoringProfile(), this.getScoringQueue(),
+        this.listBlockedCompanies().catch(() => [] as string[]),
       ])
-      return { jobs, runs, userState, scoringProfile, scoringQueue }
+      return { jobs, runs, userState, scoringProfile, scoringQueue, blockedCompanies }
     }
   }
 
@@ -216,6 +224,27 @@ export class ApiJobDataSource implements JobDataSource {
 
   async markRunViewed(runId: string): Promise<void> {
     await this.request(`/runs/${encodeURIComponent(runId)}/viewed`, { method: 'PUT' })
+  }
+
+  async listBlockedCompanies(): Promise<string[]> {
+    const response = await this.request<ApiCompanyBlocklist>('/blocked-companies')
+    return response.companies
+  }
+
+  async blockCompany(company: string): Promise<string[]> {
+    const response = await this.request<ApiCompanyBlocklist>('/blocked-companies', {
+      method: 'POST',
+      body: JSON.stringify({ company }),
+    })
+    return response.companies
+  }
+
+  async unblockCompany(company: string): Promise<string[]> {
+    const response = await this.request<ApiCompanyBlocklist>(
+      `/blocked-companies/${encodeURIComponent(company)}`,
+      { method: 'DELETE' },
+    )
+    return response.companies
   }
 
   async getScoringProfile(): Promise<ScoringProfileSettings> {

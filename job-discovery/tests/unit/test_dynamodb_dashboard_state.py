@@ -94,3 +94,32 @@ def test_profiles_scores_and_shared_discovery_settings_are_isolated_correctly() 
     )
     repository.record_discovery_run(report)
     assert repository.list_discovery_runs() == [report]
+
+
+@mock_aws
+def test_blocked_companies_are_normalized_and_isolated_per_user() -> None:
+    resource = boto3.resource("dynamodb", region_name="us-east-1")
+    resource.create_table(
+        TableName="user-data", BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "entity_key", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "entity_key", "KeyType": "RANGE"},
+        ],
+    )
+    repository = DynamoDBDashboardUserStateRepository("user-data", resource=resource)
+
+    repository.block_company("user-a", "Jobright.ai")
+    assert repository.block_company("user-a", "  JOBRIGHT.AI ") == ["jobright.ai"]
+    assert repository.block_company("user-a", "Acme Corp") == ["acme corp", "jobright.ai"]
+    assert repository.list_blocked_companies("user-b") == []
+
+    assert repository.unblock_company("user-a", "JOBRIGHT.AI") == ["acme corp"]
+    assert repository.list_blocked_companies("user-a") == ["acme corp"]
+
+    # The preference item must not leak into the job/run snapshot.
+    snapshot = repository.get_snapshot("user-a")
+    assert snapshot.jobs == [] and snapshot.runs == []

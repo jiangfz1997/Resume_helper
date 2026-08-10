@@ -8,6 +8,7 @@ from job_discovery.dashboard.interfaces import DashboardUserStateRepository
 from job_discovery.dashboard.models import DashboardJobUserStatus
 from job_discovery.domain.interfaces import CoarseScorer, JobRepository
 from job_discovery.domain.models import EligibilityStatus, JobQuery, JobRecord
+from job_discovery.domain.normalize import normalize_company
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +41,14 @@ def score_jobs_for_users(
     errors = 0
     for profile in profiles:
         attempted = 0
+        # Read once per profile: a blocked company must not reach the scorer,
+        # which is where the money is spent.
+        blocked = {
+            normalize_company(company) for company in user_data.list_blocked_companies(profile.user_id)
+        }
         for job in jobs:
+            if normalize_company(job.canonical_company) in blocked:
+                continue
             score_version = f"{prompt_version}:{job.description_hash or 'no-description'}"
             current_state = next((state for state in snapshots[profile.user_id].jobs if state.job_id == job.job_id), None)
             if current_state and current_state.status in {
