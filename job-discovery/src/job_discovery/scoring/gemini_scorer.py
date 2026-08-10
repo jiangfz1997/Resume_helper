@@ -32,15 +32,18 @@ _PROMPT_TEMPLATE = """You are screening one job posting against a candidate prof
 
 Candidate skills: {skills}
 Candidate target titles: {target_titles}
-Candidate minimum years of experience: {min_years}
+Candidate years of professional experience: {candidate_years}
 Candidate location preference: {location_pref}
 Candidate seniority preference: {seniority_pref}
 
 Job title: {title}
 Job company: {company}
 Job location: {location}
+Experience the posting demands: {required_years}
 Job description:
 {description}
+
+{experience_rule}
 
 Score the match from 1 (poor) to 10 (excellent). Also extract, strictly from the job description text, the concrete requirement keywords (required skills, tools, certifications, degrees -- not soft skills or company perks). Respond with ONLY a JSON object, no markdown fences, no extra text:
 {{"score": <integer 1-10>, "reasoning": "<two sentences max>", "requirement_keywords": [<string>, ...]}}
@@ -51,6 +54,28 @@ _NEW_GRAD_PREFERENCE = (
     "prior industry experience low even when the skills line up."
 )
 _NO_SENIORITY_PREFERENCE = "none stated"
+
+# The years requirement was previously left for the model to infer from the
+# description, and a run on 2026-08-10 scored a "5-8 years" posting 7/10 for a
+# candidate with 2, reasoning that they "meet all experience requirements".
+# Two fixes: hand it the number the deterministic extractor already found, and
+# say which direction the requirement should move the score. The candidate is
+# applying without local work history, so a lower bar is worth more than a
+# merely satisfied one.
+_EXPERIENCE_RULE = (
+    "Weigh the experience requirement heavily, and in one direction only: the "
+    "candidate is competing without local work history, so a posting asking "
+    "for near their own years of experience is worth more than one asking for "
+    "more. Score 3 or lower when the demanded experience exceeds the "
+    "candidate's by three years or more, however well the skills line up. "
+    "Never count a requirement the candidate merely satisfies as a point in "
+    "the posting's favour."
+)
+_NO_EXPERIENCE_RULE = (
+    "The candidate did not state their years of experience, so judge experience "
+    "fit from the description alone and do not weight it heavily."
+)
+_UNSTATED_REQUIREMENT = "not stated as a number; read it from the description if it is there"
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -78,15 +103,18 @@ class GeminiCoarseScorer:
             )
 
     def score(self, job: JobRecord, profile: ScoringProfile) -> CoarseScore:
+        candidate_years = profile.min_years_experience
         prompt = _PROMPT_TEMPLATE.format(
             skills=", ".join(profile.skills) or "unspecified",
             target_titles=", ".join(profile.target_titles) or "any",
-            min_years=profile.min_years_experience if profile.min_years_experience is not None else "unspecified",
+            candidate_years=candidate_years if candidate_years is not None else "unspecified",
             location_pref=profile.location_preference or "unspecified",
             seniority_pref=_NEW_GRAD_PREFERENCE if profile.prefers_new_grad else _NO_SENIORITY_PREFERENCE,
             title=job.canonical_title,
             company=job.canonical_company,
             location=job.canonical_location or "unspecified",
+            required_years=_required_years_text(job),
+            experience_rule=_EXPERIENCE_RULE if candidate_years is not None else _NO_EXPERIENCE_RULE,
             description=(job.description or "")[:6000],
         )
         body = self._generate(prompt)
@@ -111,6 +139,19 @@ class GeminiCoarseScorer:
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode(errors="replace")[:300] if hasattr(exc, "read") else ""
             raise GeminiScoringError(f"HTTP {exc.code}: {detail}") from exc
+
+
+def _required_years_text(job: JobRecord) -> str:
+    """Uses the years domain/years.py already parsed at ingest rather than
+    asking the model to find the number again -- the same value the
+    max_required_years hard filter runs on, so the filter and the score cannot
+    disagree about what the posting demands."""
+    minimum, maximum = job.required_years_min, job.required_years_max
+    if minimum is None:
+        return _UNSTATED_REQUIREMENT
+    if maximum is not None and maximum != minimum:
+        return f"{minimum}-{maximum} years"
+    return f"{minimum}+ years"
 
 
 def _extract_text(body: dict) -> str:
