@@ -86,7 +86,11 @@
                 @click.stop="blockCompany(job.company)"
               >⊘</button>
             </div>
-            <div v-if="auth.isAuthenticated" :class="['score', scoreClass(scoreFor(job.jobId))]"><b>{{ scoreFor(job.jobId) ?? '—' }}</b><small>/ 10</small></div>
+            <div
+              v-if="auth.isAuthenticated"
+              :class="['score', scoreClass(scoreFor(job.jobId)), { stale: isStaleScore(job.jobId) }]"
+              :title="isStaleScore(job.jobId) ? `Scored under ${staleLabel(job.jobId)}; yours is now v${currentProfileVersion}` : undefined"
+            ><b>{{ scoreFor(job.jobId) ?? '—' }}</b><small>{{ isStaleScore(job.jobId) ? 'older' : '/ 10' }}</small></div>
           </div>
         </article>
       </div>
@@ -94,7 +98,7 @@
       <aside v-if="selectedJob" class="detail">
         <header>
           <div><span>{{ selectedJob.company }}</span><h2>{{ selectedJob.title }}</h2><p>{{ selectedJob.location }} · {{ workplaceLabel(selectedJob.workplaceType) }}</p></div>
-          <div v-if="auth.isAuthenticated" :class="['detail-score', scoreClass(scoreFor(selectedJob.jobId))]"><b>{{ scoreFor(selectedJob.jobId) ?? '—' }}</b><small>your fit</small></div>
+          <div v-if="auth.isAuthenticated" :class="['detail-score', scoreClass(scoreFor(selectedJob.jobId)), { stale: isStaleScore(selectedJob.jobId) }]"><b>{{ scoreFor(selectedJob.jobId) ?? '—' }}</b><small>{{ isStaleScore(selectedJob.jobId) ? staleLabel(selectedJob.jobId) : 'your fit' }}</small></div>
         </header>
 
         <div v-if="auth.isAuthenticated" class="actions">
@@ -103,7 +107,7 @@
           <n-button :type="statusFor(selectedJob.jobId) === 'applied' ? 'success' : 'default'" @click="toggleStatus(selectedJob.jobId, 'applied')">{{ statusFor(selectedJob.jobId) === 'applied' ? 'Applied' : 'Mark applied' }}</n-button>
           <n-button quaternary type="error" @click="toggleStatus(selectedJob.jobId, 'rejected')">{{ statusFor(selectedJob.jobId) === 'rejected' ? 'Restore' : 'Reject' }}</n-button>
           <n-button quaternary type="error" @click="blockCompany(selectedJob.company)">Block company</n-button>
-          <n-button v-if="scoreFor(selectedJob.jobId) === null" :disabled="isScoreQueued(selectedJob.jobId)" @click="queueScore(selectedJob.jobId)">{{ isScoreQueued(selectedJob.jobId) ? 'Queued' : scoringAttemptFor(selectedJob.jobId)?.scoringStatus === 'failed' ? 'Retry score' : 'Score now' }}</n-button>
+          <n-button v-if="scoreFor(selectedJob.jobId) === null || isStaleScore(selectedJob.jobId)" :disabled="isScoreQueued(selectedJob.jobId)" @click="queueScore(selectedJob.jobId)">{{ isScoreQueued(selectedJob.jobId) ? 'Queued' : scoringAttemptFor(selectedJob.jobId)?.scoringStatus === 'failed' ? 'Retry score' : isStaleScore(selectedJob.jobId) ? 'Rescore' : 'Score now' }}</n-button>
           <n-button type="primary" class="generate" @click="sendToGenerate(selectedJob)">Generate resume</n-button>
         </div>
 
@@ -113,7 +117,7 @@
         </div>
 
         <section v-if="auth.isAuthenticated" :class="['reasoning', { pending: !assessmentFor(selectedJob.jobId)?.coarseScoreReasoning }]">
-          <span class="eyebrow">{{ assessmentFor(selectedJob.jobId)?.coarseScoreReasoning ? 'WHY THIS FITS YOU' : scoringAttemptFor(selectedJob.jobId)?.scoreError ? 'SCORING FAILED' : 'NOT SCORED FOR YOU YET' }}</span>
+          <span class="eyebrow">{{ reasoningEyebrow(selectedJob.jobId) }}</span>
           <p>{{ assessmentFor(selectedJob.jobId)?.coarseScoreReasoning || scoringAttemptFor(selectedJob.jobId)?.scoreError || 'Save a scoring profile, then the scheduled scoring run will evaluate this role for your account.' }}</p>
           <small v-if="assessmentFor(selectedJob.jobId)?.scoreModel">{{ assessmentFor(selectedJob.jobId)?.scoreModel }}<template v-if="assessmentFor(selectedJob.jobId)?.scoredAt"> · {{ formatDate(assessmentFor(selectedJob.jobId)?.scoredAt ?? '') }}</template></small>
         </section>
@@ -361,11 +365,30 @@ function initials(company: string): string { return company.split(/\s+/).slice(0
 function workplaceLabel(value: WorkplaceType): string { return ({ remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site', unknown: 'Workplace unknown' } satisfies Record<WorkplaceType, string>)[value] }
 function sourceLabel(value: string): string { return ({ workday: 'Workday', indeed: 'Indeed', linkedin: 'LinkedIn', zip_recruiter: 'ZipRecruiter' } as Record<string, string>)[value] ?? value }
 function statusLabel(value: JobUserStatus): string { return ({ new: 'New', saved: 'Saved', selected: 'Shortlist', applied: 'Applied', rejected: 'Rejected' } satisfies Record<JobUserStatus, string>)[value] }
+// A score stays visible after a profile edit instead of vanishing. Hiding it
+// used to be harmless because the next scheduled run recomputed it within a
+// day; since that run only looks at jobs discovered in the last two days,
+// hiding an older score would mean never showing one again. isStaleScore()
+// marks what no longer reflects the current profile.
 function assessmentFor(jobId: string): JobUserState | undefined {
   const assessment = stateFor(jobId)
-  return assessment?.profileVersion === currentProfileVersion.value ? assessment : undefined
+  return assessment && assessment.coarseScore !== null ? assessment : undefined
+}
+function isStaleScore(jobId: string): boolean {
+  const assessment = assessmentFor(jobId)
+  return assessment !== undefined && assessment.profileVersion !== currentProfileVersion.value
+}
+function staleLabel(jobId: string): string {
+  const version = assessmentFor(jobId)?.profileVersion
+  return version === null || version === undefined ? 'older profile' : `profile v${version}`
 }
 function stateFor(jobId: string): JobUserState | undefined { return userState.value.jobs.find((job) => job.jobId === jobId) }
+function reasoningEyebrow(jobId: string): string {
+  if (!assessmentFor(jobId)?.coarseScoreReasoning) {
+    return scoringAttemptFor(jobId)?.scoreError ? 'SCORING FAILED' : 'NOT SCORED FOR YOU YET'
+  }
+  return isStaleScore(jobId) ? `WHY THIS FIT — ${staleLabel(jobId).toUpperCase()}` : 'WHY THIS FITS YOU'
+}
 function scoringAttemptFor(jobId: string): JobUserState | undefined {
   const state = stateFor(jobId)
   return state?.scoringProfileVersion === currentProfileVersion.value ? state : undefined
@@ -480,6 +503,7 @@ function resetFilters(): void { search.value = ''; category.value = 'all'; runFi
 .side-col{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .quick-actions{display:flex;gap:5px}.quick-actions a,.quick-actions button{display:grid;place-items:center;width:23px;height:23px;border:1px solid var(--border);border-radius:6px;color:var(--muted);background:rgba(255,255,255,.03);font-size:12px;line-height:1;text-decoration:none;cursor:pointer}.quick-actions a:hover,.quick-actions button:hover{color:#edf1f7;background:#1b202b}.quick-actions button.active{color:#e47784;border-color:rgba(224,88,103,.35);background:rgba(224,88,103,.1)}
 .score{display:flex;flex-direction:column;align-items:flex-end;min-width:39px}.score b{font-size:19px}.score small{color:#606a7b;font-size:8px}.score-strong{color:#4bd49d}.score-medium{color:#e9b65e}.score-low{color:#e87783}.score-empty{color:#5f6979}
+.score.stale,.detail-score.stale{opacity:.5}.detail-score.stale small{color:#8a8172;text-transform:none}
 .detail{padding:23px 25px 30px}.detail>header{display:flex;justify-content:space-between;gap:20px}.detail>header span{color:#8eb8f6;font-size:12px}.detail h2{margin:5px 0 7px;font-size:23px}.detail header p{margin:0;color:var(--muted);font-size:12px}.detail-score{display:flex;flex:none;flex-direction:column;align-items:center;justify-content:center;width:69px;height:61px;border:1px solid currentColor;border-radius:10px}.detail-score b{font-size:24px}.detail-score small{color:#707b8d;font-size:8px;text-transform:uppercase}.actions{display:flex;gap:8px;margin:20px 0;padding-bottom:20px;border-bottom:1px solid var(--border)}.generate{margin-left:auto}
 .reasoning{margin-bottom:25px;padding:17px 18px;border:1px solid rgba(112,167,248,.24);border-radius:10px;background:#151a22}.reasoning.pending{border-color:rgba(231,169,75,.28);background:#1a1917}.reasoning.pending .eyebrow{color:#efc574}.reasoning p{margin:9px 0 10px;color:#d0d6df;font-size:13px;line-height:1.65}.reasoning small{color:#8a96a8;font:10px/1.4 ui-monospace,monospace}
 .job-requirements{margin-bottom:25px}.requirement-tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}.requirement-tags span{padding:6px 9px;border:1px solid rgba(255,255,255,.11);border-radius:6px;color:#c2cad6;background:#171c24;font-size:11px;line-height:1.35}.requirement-tags .requirement-years{border-color:rgba(231,169,75,.32);color:#f0c16f;background:rgba(231,169,75,.1);font-weight:700}.requirement-tags .requirement-new-grad{border-color:rgba(62,207,142,.32);color:#67e2ae;background:rgba(62,207,142,.11);font-weight:700}
