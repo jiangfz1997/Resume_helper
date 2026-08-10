@@ -25,7 +25,9 @@ def test_scoring_schedule_runs_after_discovery() -> None:
 
     assert properties["ScheduleExpression"] == "cron(45 10 * * ? *)"
     assert properties["ScheduleExpressionTimezone"] == "America/Toronto"
-    assert properties["Input"] == '{"limit":30}'
+    # max_age_days keeps the daily run on fresh postings; without it a profile
+    # edit sends it back through weeks of invalidated scores.
+    assert properties["Input"] == '{"limit":30,"max_age_days":2}'
 
 
 def test_template_routes_match_the_handler() -> None:

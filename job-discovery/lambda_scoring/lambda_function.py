@@ -35,10 +35,12 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
         limit=int(event.get("limit", 100)),
         user_ids=set(event["user_ids"]) if event.get("user_ids") else None,
         job_ids={UUID(value) for value in event["job_ids"]} if event.get("job_ids") else None,
+        max_age_days=int(event["max_age_days"]) if event.get("max_age_days") is not None else None,
     )
     response = {
         "repository_backend": repository_backend,
         "active_profiles": len(profiles),
+        "max_age_days": event.get("max_age_days"),
         "scored": scored,
         "errors": errors,
     }
