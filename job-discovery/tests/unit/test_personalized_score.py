@@ -62,3 +62,44 @@ def test_existing_score_for_one_user_does_not_skip_a_second_user() -> None:
     shared_job = jobs.get_record(result.job_id)
     assert shared_job is not None
     assert shared_job.coarse_score is None
+
+
+@mock_aws
+def test_blocked_company_is_never_sent_to_the_scorer() -> None:
+    resource = boto3.resource("dynamodb", region_name="us-east-1")
+    resource.create_table(
+        TableName="user-data", BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "entity_key", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "entity_key", "KeyType": "RANGE"},
+        ],
+    )
+    user_data = DynamoDBDashboardUserStateRepository("user-data", resource=resource)
+    jobs = InMemoryJobRepository()
+    for index, company in enumerate(["Jobright.ai", "Acme Corp"]):
+        ingest_observation(
+            SourceJobObservation(
+                source=SourceName.WORKDAY, source_job_id=f"R_{index}",
+                source_url=f"https://example.com/R_{index}", title_raw="Software Engineer",
+                company_raw=company, location_raw="Toronto",
+                # Distinct text per posting, otherwise the description hash
+                # would merge the two into one deduplicated record.
+                description_raw=f"A detailed job description at {company} " * 30,
+                observed_at=datetime(2026, 8, 5, 9, 0), run_id="run-1",
+            ),
+            jobs,
+            FilterConfig(filter_version="v1", min_description_chars=0),
+        )
+    user_data.save_scoring_profile("user-a", ScoringProfileInput(skills=["Python"]))
+    user_data.block_company("user-a", "Jobright.ai")
+
+    assert score_jobs_for_users(jobs, user_data, ProfileAwareScorer(), "prompt-v1") == (1, 0)
+
+    scored = user_data.get_snapshot("user-a").jobs
+    assert len(scored) == 1
+    record = jobs.get_record(scored[0].job_id)
+    assert record is not None and record.canonical_company == "Acme Corp"

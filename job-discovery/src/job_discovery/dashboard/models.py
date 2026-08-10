@@ -159,6 +159,22 @@ class DashboardRunUserState(BaseModel):
     viewed_at: datetime
 
 
+class CompanyBlocklist(BaseModel):
+    """Companies whose postings one user never wants to see again.
+
+    Stored normalized (see domain.normalize.normalize_company) and matched
+    exactly, so "Jobright.ai" and "jobright.ai " collapse to one entry while
+    an unrelated "Jobright Media" stays visible. Per user rather than in
+    DiscoverySettings because one crawl is shared by every account: blocking
+    at ingest would hide the company from everyone."""
+
+    companies: list[str] = Field(default_factory=list)
+
+
+class BlockCompanyRequest(BaseModel):
+    company: str = Field(min_length=1, max_length=200)
+
+
 class DashboardUserStateSnapshot(BaseModel):
     jobs: list[DashboardJobUserState] = Field(default_factory=list)
     runs: list[DashboardRunUserState] = Field(default_factory=list)
@@ -194,3 +210,4 @@ class DashboardBootstrap(BaseModel):
     user_state: DashboardUserStateSnapshot
     scoring_profile: UserScoringProfile | None = None
     scoring_queue: DashboardScoringQueue
+    blocked_companies: list[str] = Field(default_factory=list)

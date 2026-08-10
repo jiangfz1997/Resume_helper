@@ -16,8 +16,11 @@ from job_discovery.dashboard.models import (
     DiscoveryRunReport,
 )
 from job_discovery.domain.models import CoarseScore
+from job_discovery.domain.normalize import normalize_company
 from job_discovery.domain.settings import DiscoverySettings, DiscoverySettingsInput, ScoringProfileInput, UserScoringProfile
 from job_discovery.repositories.dynamodb import _paginated
+
+_BLOCKED_COMPANIES_KEY = "PREFS#BLOCKED_COMPANIES"
 
 
 class DynamoDBDashboardUserStateRepository(DashboardUserStateRepository):
@@ -84,6 +87,34 @@ class DynamoDBDashboardUserStateRepository(DashboardUserStateRepository):
                 "updated_at": now,
             }
         )
+
+    def list_blocked_companies(self, user_id: str) -> list[str]:
+        item = self._table.get_item(
+            Key={"user_id": user_id, "entity_key": _BLOCKED_COMPANIES_KEY}, ConsistentRead=True
+        ).get("Item")
+        return sorted(item.get("companies", [])) if item else []
+
+    def block_company(self, user_id: str, company: str) -> list[str]:
+        return self._mutate_blocklist(user_id, company, "ADD companies :company")
+
+    def unblock_company(self, user_id: str, company: str) -> list[str]:
+        return self._mutate_blocklist(user_id, company, "DELETE companies :company")
+
+    def _mutate_blocklist(self, user_id: str, company: str, clause: str) -> list[str]:
+        """ADD/DELETE on a DynamoDB string set, not a read-modify-write of a
+        list: two tabs blocking different companies at the same time would
+        otherwise silently drop one of them."""
+        item = self._table.update_item(
+            Key={"user_id": user_id, "entity_key": _BLOCKED_COMPANIES_KEY},
+            UpdateExpression=f"SET entity_type = :type, updated_at = :now {clause}",
+            ExpressionAttributeValues={
+                ":type": "blocked_companies",
+                ":now": datetime.now(timezone.utc).isoformat(),
+                ":company": {normalize_company(company)},
+            },
+            ReturnValues="ALL_NEW",
+        )["Attributes"]
+        return sorted(item.get("companies", []))
 
     def get_scoring_profile(self, user_id: str) -> UserScoringProfile | None:
         item = self._table.get_item(

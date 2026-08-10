@@ -35,6 +35,7 @@ The dashboard SAM stack creates the retained on-demand table
 | Cognito `sub` / `PROFILE#SCORING` | Personal lightweight scoring profile |
 | Cognito `sub` / `JOB#<job_id>` | Personal score plus viewed/workflow state |
 | Cognito `sub` / `RUN#<run_id>` | Whether that user opened the crawl batch |
+| Cognito `sub` / `PREFS#BLOCKED_COMPANIES` | Companies this user never wants to see |
 | `SYSTEM` / `SETTINGS#DISCOVERY` | One shared crawler/filter configuration |
 
 Saving a profile increments `profile_version`. A score is reusable only when
@@ -57,7 +58,17 @@ the user ID; the browser never supplies an arbitrary user ID.
 - `GET /user-state`: current user's scores, views, run views, and statuses.
 - `GET /scoring/queue`: current user's scored and pending counts.
 - `POST /jobs/{job_id}/score`: queues one job for the authenticated user.
+- `GET/POST /blocked-companies`, `DELETE /blocked-companies/{company}`: the
+  current user's company blocklist.
 - Existing `/jobs` and `/runs` routes return shared discovery data.
+
+Blocking is personal because one crawl feeds every account: an ingest-level
+company filter would hide the employer from everyone. Blocked names are stored
+normalized (trimmed, whitespace-collapsed, casefolded) and matched exactly, so
+`Jobright.ai` never hides `Jobright Media`. Blocked companies are dropped from
+the job list, from the scoring queue counts, and from the scoring worker's
+candidates, so they cost no LLM calls. `GET /jobs` becomes `no-store` when the
+caller is authenticated, since the response is then personal.
 
 The Vue `Job Settings` page makes the ownership boundary explicit. Both users
 may currently edit shared discovery settings, which is acceptable for the

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -21,9 +22,15 @@ from job_discovery.dashboard.models import (
     JobLifecycleStatus,
 )
 from job_discovery.domain.models import EligibilityStatus, JobRecord, JobSourceListing, ListingStatus
+from job_discovery.domain.normalize import normalize_company
 
 
-def list_dashboard_jobs(reader: DashboardJobReader, query: DashboardJobQuery) -> DashboardJobPage:
+def list_dashboard_jobs(
+    reader: DashboardJobReader,
+    query: DashboardJobQuery,
+    blocked_companies: Collection[str] = (),
+) -> DashboardJobPage:
+    blocked = _normalized_blocklist(blocked_companies)
     listings_by_job: dict[UUID, list[JobSourceListing]] = defaultdict(list)
     for listing in reader.list_all_listings():
         listings_by_job[listing.job_id].append(listing)
@@ -31,7 +38,7 @@ def list_dashboard_jobs(reader: DashboardJobReader, query: DashboardJobQuery) ->
     summaries: list[DashboardJobSummary] = []
     for record in reader.list_records():
         listings = listings_by_job.get(record.job_id, [])
-        if not _matches(record, listings, query):
+        if _is_blocked(record, blocked) or not _matches(record, listings, query):
             continue
         summaries.append(_to_summary(record, listings))
 
@@ -108,7 +115,9 @@ def get_scoring_queue(
     reader: DashboardJobReader,
     states: list[DashboardJobUserState],
     profile_version: int | None,
+    blocked_companies: Collection[str] = (),
 ) -> DashboardScoringQueue:
+    blocked = _normalized_blocklist(blocked_companies)
     listings_by_job: dict[UUID, list[JobSourceListing]] = defaultdict(list)
     for listing in reader.list_all_listings():
         listings_by_job[listing.job_id].append(listing)
@@ -128,7 +137,10 @@ def get_scoring_queue(
         state.job_id for state in states
         if state.status in {DashboardJobUserStatus.APPLIED, DashboardJobUserStatus.REJECTED}
     }
-    eligible = [record for record in reader.list_records() if record.eligibility_status is EligibilityStatus.ELIGIBLE]
+    eligible = [
+        record for record in reader.list_records()
+        if record.eligibility_status is EligibilityStatus.ELIGIBLE and not _is_blocked(record, blocked)
+    ]
     archived = {
         record.job_id for record in eligible
         if _lifecycle_status(record, listings_by_job.get(record.job_id, [])) is JobLifecycleStatus.ARCHIVED
@@ -156,15 +168,25 @@ def get_dashboard_bootstrap(
     table rather than one per concurrent request."""
     snapshot = state_repository.get_snapshot(user_id)
     profile = state_repository.get_scoring_profile(user_id)
+    blocked_companies = state_repository.list_blocked_companies(user_id)
     return DashboardBootstrap(
-        jobs=list_dashboard_jobs(reader, query),
+        jobs=list_dashboard_jobs(reader, query, blocked_companies),
         runs=list_dashboard_runs(reader, state_repository.list_discovery_runs()),
         user_state=snapshot,
         scoring_profile=profile,
         scoring_queue=get_scoring_queue(
-            reader, snapshot.jobs, profile.profile_version if profile else None
+            reader, snapshot.jobs, profile.profile_version if profile else None, blocked_companies
         ),
+        blocked_companies=blocked_companies,
     )
+
+
+def _normalized_blocklist(companies: Collection[str]) -> frozenset[str]:
+    return frozenset(normalize_company(company) for company in companies)
+
+
+def _is_blocked(record: JobRecord, blocked: frozenset[str]) -> bool:
+    return bool(blocked) and normalize_company(record.canonical_company) in blocked
 
 
 def _matches(record: JobRecord, listings: list[JobSourceListing], query: DashboardJobQuery) -> bool:

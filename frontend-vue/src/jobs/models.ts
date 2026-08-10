@@ -168,6 +168,7 @@ export interface DashboardBootstrap {
   userState: DashboardUserState
   scoringProfile: ScoringProfileSettings
   scoringQueue: ScoringQueueSummary
+  blockedCompanies: string[]
 }
 
 export interface JobDataSource {
@@ -183,6 +184,9 @@ export interface JobDataSource {
   markJobViewed(jobId: string): Promise<void>
   setJobStatus(jobId: string, status: JobUserStatus): Promise<void>
   markRunViewed(runId: string): Promise<void>
+  listBlockedCompanies(): Promise<string[]>
+  blockCompany(company: string): Promise<string[]>
+  unblockCompany(company: string): Promise<string[]>
   getScoringProfile(): Promise<ScoringProfileSettings>
   saveScoringProfile(profile: ScoringProfileSettings): Promise<ScoringProfileSettings>
   getDiscoverySettings(): Promise<DiscoverySettings>

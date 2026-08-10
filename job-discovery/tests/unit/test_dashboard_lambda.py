@@ -81,9 +81,14 @@ def test_authenticated_list_returns_page(monkeypatch) -> None:
         def list_all_listings(self) -> list:
             return []
 
+    class FakeStateRepository:
+        def list_blocked_companies(self, user_id: str) -> list[str]:
+            return []
+
     monkeypatch.setenv("REQUIRE_AUTH", "true")
     module = _load_lambda()
     module._reader = EmptyReader()
+    module._state_repository = FakeStateRepository()
     event = {
         "routeKey": "GET /jobs",
         "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
@@ -94,6 +99,8 @@ def test_authenticated_list_returns_page(monkeypatch) -> None:
 
     assert response["statusCode"] == 200
     assert body == {"schema_version": "job-dashboard.v1", "items": [], "total": 0}
+    # Personal filtering rules out the shared CloudFront cache entry.
+    assert response["headers"]["Cache-Control"] == "no-store"
 
 
 def test_authenticated_user_can_update_job_state(monkeypatch) -> None:
@@ -282,3 +289,59 @@ def test_manual_crawler_invokes_selected_functions_with_one_run_id(monkeypatch) 
     assert response["statusCode"] == 202
     assert [call["FunctionName"] for call in invocations] == ["workday-function", "jobspy-function"]
     assert payloads == [{"run_id": body["run_id"]}, {"run_id": body["run_id"]}]
+
+
+def test_missing_claims_cannot_block_a_company(monkeypatch) -> None:
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    module = _load_lambda()
+
+    response = module.lambda_handler({"routeKey": "POST /blocked-companies"}, None)
+
+    assert response["statusCode"] == 401
+
+
+def test_blocking_a_company_is_scoped_to_the_authenticated_user(monkeypatch) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    class FakeStateRepository:
+        def block_company(self, user_id: str, company: str) -> list[str]:
+            calls.append(("block", user_id, company))
+            return ["jobright.ai"]
+
+        def unblock_company(self, user_id: str, company: str) -> list[str]:
+            calls.append(("unblock", user_id, company))
+            return []
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    module = _load_lambda()
+    module._state_repository = FakeStateRepository()
+    claims = {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}}
+
+    blocked = module.lambda_handler({
+        "routeKey": "POST /blocked-companies",
+        "body": '{"company":"Jobright.ai"}',
+        "requestContext": claims,
+    }, None)
+    restored = module.lambda_handler({
+        "routeKey": "DELETE /blocked-companies/{company}",
+        "pathParameters": {"company": "jobright.ai"},
+        "requestContext": claims,
+    }, None)
+
+    assert json.loads(blocked["body"]) == {"companies": ["jobright.ai"]}
+    assert json.loads(restored["body"]) == {"companies": []}
+    assert calls == [("block", "user-1", "Jobright.ai"), ("unblock", "user-1", "jobright.ai")]
+
+
+def test_blocking_an_empty_company_is_rejected(monkeypatch) -> None:
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    module = _load_lambda()
+    event = {
+        "routeKey": "POST /blocked-companies",
+        "body": '{"company":""}',
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
+    }
+
+    response = module.lambda_handler(event, None)
+
+    assert response["statusCode"] == 400
