@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 from moto import mock_aws
@@ -103,3 +103,57 @@ def test_blocked_company_is_never_sent_to_the_scorer() -> None:
     assert len(scored) == 1
     record = jobs.get_record(scored[0].job_id)
     assert record is not None and record.canonical_company == "Acme Corp"
+
+
+@mock_aws
+def test_max_age_days_keeps_the_daily_run_off_the_backlog() -> None:
+    resource = boto3.resource("dynamodb", region_name="us-east-1")
+    resource.create_table(
+        TableName="user-data", BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "entity_key", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "entity_key", "KeyType": "RANGE"},
+        ],
+    )
+    user_data = DynamoDBDashboardUserStateRepository("user-data", resource=resource)
+    jobs = InMemoryJobRepository()
+    ingested = [
+        ingest_observation(
+            SourceJobObservation(
+                source=SourceName.WORKDAY, source_job_id=f"R_{index}",
+                source_url=f"https://example.com/R_{index}", title_raw="Software Engineer",
+                company_raw=f"Company {index}", location_raw="Toronto",
+                description_raw=f"A detailed job description number {index} " * 30,
+                observed_at=datetime(2026, 8, 5, 9, 0), run_id="run-1",
+            ),
+            jobs,
+            FilterConfig(filter_version="v1", min_description_chars=0),
+        )
+        for index in range(2)
+    ]
+    # ingest stamps created_at from observed_at, so both records start stale.
+    stale = jobs.get_record(ingested[0].job_id)
+    fresh = jobs.get_record(ingested[1].job_id)
+    assert stale is not None and fresh is not None
+    stale.created_at = datetime.now(timezone.utc) - timedelta(days=9)
+    fresh.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+    user_data.save_scoring_profile("user-a", ScoringProfileInput(skills=["Python"]))
+
+    assert score_jobs_for_users(
+        jobs, user_data, ProfileAwareScorer(), "prompt-v1", max_age_days=2
+    ) == (1, 0)
+    scored = user_data.get_snapshot("user-a").jobs
+    assert [state.job_id for state in scored] == [ingested[1].job_id]
+
+    # An operator pressing "Score now" on that old posting still reaches it.
+    assert score_jobs_for_users(
+        jobs, user_data, ProfileAwareScorer(), "prompt-v1",
+        job_ids={ingested[0].job_id}, max_age_days=2,
+    ) == (1, 0)
+    assert {state.job_id for state in user_data.get_snapshot("user-a").jobs} == {
+        ingested[0].job_id, ingested[1].job_id
+    }

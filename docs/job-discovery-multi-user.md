@@ -77,13 +77,22 @@ untrusted users.
 
 ## Scheduling and capacity
 
-Workday and JobSpy run at 10:00, 14:00, and 20:00 in `America/Toronto`;
-personalized scoring follows at 10:45, 14:45, and 20:45. EventBridge Scheduler
-applies daylight-saving changes automatically. The Dashboard stack owns only
-the scoring schedule. The retained crawler schedules and invocation role are
-temporarily unmanaged while they wait for import into the Discovery stack.
-Each scoring invocation loads at most 20 eligible jobs and evaluates them for
-every active profile.
+Workday and JobSpy run at 10:00 in `America/Toronto`; personalized scoring
+follows at 10:45. EventBridge Scheduler applies daylight-saving changes
+automatically. The Dashboard stack owns only the scoring schedule. The retained
+crawler schedules and invocation role are temporarily unmanaged while they wait
+for import into the Discovery stack.
+
+The scheduled run passes `{"limit":30,"max_age_days":2}`: at most 30 eligible
+jobs per active profile, and only jobs discovered in the last two days. The age
+window exists because saving a scoring profile bumps `profile_version` and
+therefore invalidates every existing score -- without it, one profile edit
+sends the daily run back through weeks of backlog before it reaches anything
+newly discovered. Two days rather than "only the newest run" so a failed crawl
+or a failed scoring run does not silently skip a day of postings.
+
+An explicit `job_ids` payload ignores the age window, so the dashboard's
+"Score now" and "Score one discovery run" buttons still reach old postings.
 This conservative batch size leaves retry headroom inside Lambda's 15-minute
 maximum. Repeated runs skip unchanged `(user, job, profile, prompt)` versions.
 

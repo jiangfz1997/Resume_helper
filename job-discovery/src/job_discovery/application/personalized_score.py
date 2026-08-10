@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from job_discovery.dashboard.interfaces import DashboardUserStateRepository
@@ -21,10 +21,24 @@ def score_jobs_for_users(
     limit: int = 100,
     user_ids: set[str] | None = None,
     job_ids: set[UUID] | None = None,
+    max_age_days: int | None = None,
 ) -> tuple[int, int]:
+    """max_age_days bounds the scheduled run to recently discovered jobs.
+    Without it, editing a scoring profile invalidates every existing score and
+    the daily run spends its whole budget grinding through weeks of backlog
+    before it reaches anything new. An age window rather than "only the newest
+    run" so a failed crawl or a failed scoring run does not silently skip a
+    day's postings.
+
+    An explicit job_ids list always wins: that comes from an operator pressing
+    a button on one job or one run, and must keep working on an old posting.
+    """
     jobs = repository.query(JobQuery(eligibility_status=EligibilityStatus.ELIGIBLE, limit=1000))
     if job_ids is not None:
         jobs = [job for job in jobs if job.job_id in job_ids]
+    elif max_age_days is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).timestamp()
+        jobs = [job for job in jobs if _created_timestamp(job) >= cutoff]
     jobs.sort(key=_created_timestamp, reverse=True)
     profiles = [
         profile for profile in user_data.list_scoring_profiles()
