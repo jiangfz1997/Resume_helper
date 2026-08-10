@@ -227,11 +227,11 @@ const runOptions = computed(() => [{ label: `All runs${unreadRunCount.value ? ` 
   value: run.runId,
 }))])
 
-const pendingCount = computed(() => jobs.value.filter((job) => job.eligibilityStatus !== 'excluded' && job.lifecycleStatus !== 'archived' && !['applied', 'rejected'].includes(statusFor(job.jobId))).length)
-const unviewedCount = computed(() => jobs.value.filter((job) => job.eligibilityStatus !== 'excluded' && job.lifecycleStatus !== 'archived' && !isViewed(job.jobId) && !['applied', 'rejected'].includes(statusFor(job.jobId))).length)
-const unreadRunCount = computed(() => runs.value.filter((run) => !isRunViewed(run.runId)).length)
-const selectedRunSummary = computed(() => runFilter.value === 'all' ? runs.value[0] ?? null : runs.value.find((run) => run.runId === runFilter.value) ?? null)
-const visibleJobs = computed(() => jobs.value.filter((job) => {
+// Everything the filter bar selects, before the status tabs narrow it down.
+// Kept separate so the tab counts can describe the set the tabs are choosing
+// between: counting the whole inbox made "Pending 235" while a single run was
+// selected, which described no view the user could reach.
+const filteredJobs = computed(() => jobs.value.filter((job) => {
   // The API already drops blocked companies; this keeps a freshly blocked one
   // from lingering until the next page load.
   if (blockedCompanies.value.has(normalizeCompany(job.company))) return false
@@ -243,13 +243,23 @@ const visibleJobs = computed(() => jobs.value.filter((job) => {
   if (freshness.value !== 'all' && freshness.value !== 'current' && job.lifecycleStatus !== freshness.value) return false
   if (eligibility.value === 'actionable' && job.eligibilityStatus === 'excluded') return false
   if (!['all', 'actionable'].includes(eligibility.value) && job.eligibilityStatus !== eligibility.value) return false
-  if (status.value === 'pending' && ['applied', 'rejected'].includes(statusFor(job.jobId))) return false
-  if (status.value !== 'pending' && statusFor(job.jobId) !== status.value) return false
   if (score.value === 'strong' && (scoreFor(job.jobId) ?? -1) < 8) return false
   if (score.value === 'potential' && (scoreFor(job.jobId) ?? -1) < 5) return false
   if (score.value === 'scored' && scoreFor(job.jobId) === null) return false
   if (score.value === 'unscored' && scoreFor(job.jobId) !== null) return false
   return true
+}))
+
+// No eligibility/lifecycle guards here any more: the filter bar owns those two
+// dimensions, and repeating them would make "Pending 0" sit above a populated
+// list as soon as the Excluded or Archived filter is selected.
+const pendingCount = computed(() => filteredJobs.value.filter((job) => !['applied', 'rejected'].includes(statusFor(job.jobId))).length)
+const unviewedCount = computed(() => filteredJobs.value.filter((job) => !isViewed(job.jobId) && !['applied', 'rejected'].includes(statusFor(job.jobId))).length)
+const unreadRunCount = computed(() => runs.value.filter((run) => !isRunViewed(run.runId)).length)
+const selectedRunSummary = computed(() => runFilter.value === 'all' ? runs.value[0] ?? null : runs.value.find((run) => run.runId === runFilter.value) ?? null)
+const visibleJobs = computed(() => filteredJobs.value.filter((job) => {
+  if (status.value === 'pending') return !['applied', 'rejected'].includes(statusFor(job.jobId))
+  return statusFor(job.jobId) === status.value
 }).sort((left, right) => {
   if (sort.value === 'score') return (scoreFor(right.jobId) ?? -1) - (scoreFor(left.jobId) ?? -1)
   if (sort.value === 'company') return left.company.localeCompare(right.company)
@@ -257,8 +267,8 @@ const visibleJobs = computed(() => jobs.value.filter((job) => {
 }))
 
 const statusTabs = computed(() => {
-  if (!auth.isAuthenticated) return [{ label: 'All roles', value: 'pending' as const, count: jobs.value.length }]
-  const count = (value: JobUserStatus): number => jobs.value.filter((job) => statusFor(job.jobId) === value).length
+  if (!auth.isAuthenticated) return [{ label: 'All roles', value: 'pending' as const, count: filteredJobs.value.length }]
+  const count = (value: JobUserStatus): number => filteredJobs.value.filter((job) => statusFor(job.jobId) === value).length
   return [{ label: 'Pending', value: 'pending' as const, count: pendingCount.value }, { label: 'Saved', value: 'saved' as const, count: count('saved') }, { label: 'Shortlist', value: 'selected' as const, count: count('selected') }, { label: 'Applied', value: 'applied' as const, count: count('applied') }, { label: 'Rejected', value: 'rejected' as const, count: count('rejected') }]
 })
 const descriptionBlocks = computed<DescriptionBlock[]>(() => formatDescription(selectedJob.value?.description ?? ''))
