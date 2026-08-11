@@ -61,6 +61,18 @@ def _int_or_none(value: Any) -> int | None:
     return int(value) if value is not None else None
 
 
+def _effective_eligibility(
+    job: JobRecord, candidate: NormalizedJobCandidate, eligibility: EligibilityDecision
+) -> tuple[EligibilityStatus, list[FilterCode]]:
+    """Do not let a metadata-only feed erase a richer listing's verdict."""
+    codes = list(eligibility.codes)
+    if candidate.description is None and job.description is not None:
+        codes = [code for code in codes if code not in {FilterCode.DESCRIPTION_MISSING, FilterCode.DESCRIPTION_TOO_SHORT}]
+        if eligibility.status is EligibilityStatus.REVIEW and not codes:
+            return EligibilityStatus.ELIGIBLE, codes
+    return eligibility.status, codes
+
+
 def _paginated(operation: Any, **kwargs: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     resp = operation(**kwargs)
@@ -477,11 +489,21 @@ class DynamoDBJobRepository(JobRepository):
             job.description_chars = candidate.description_chars
             job.description_hash = candidate.description_hash
             changed = True
-        if eligibility.status != job.eligibility_status or eligibility.codes != job.filter_codes:
-            job.eligibility_status = eligibility.status
-            job.filter_codes = eligibility.codes
+        eligibility_status, eligibility_codes = _effective_eligibility(job, candidate, eligibility)
+        if eligibility_status != job.eligibility_status or eligibility_codes != job.filter_codes:
+            job.eligibility_status = eligibility_status
+            job.filter_codes = eligibility_codes
             job.filter_version = eligibility.filter_version
             changed = True
+        if candidate.is_new_grad and not job.is_new_grad:
+            job.is_new_grad = True
+            job.new_grad_signals = candidate.new_grad_signals
+            changed = True
+        elif candidate.is_new_grad:
+            merged_signals = list(dict.fromkeys(job.new_grad_signals + candidate.new_grad_signals))
+            if merged_signals != job.new_grad_signals:
+                job.new_grad_signals = merged_signals
+                changed = True
         return changed
 
     def _new_listing(self, job_id: UUID, candidate: NormalizedJobCandidate) -> JobSourceListing:

@@ -32,6 +32,9 @@ Parameters:
   ScoringLambdaCodeKey:
     Type: String
     Description: Immutable S3 key for the personalized scoring Lambda deployment package
+  SimplifyLambdaCodeKey:
+    Type: String
+    Description: Immutable S3 key for the Simplify New Grad crawler Lambda deployment package
   GeminiApiKey:
     Type: String
     NoEcho: true
@@ -151,6 +154,58 @@ Resources:
               audience:
                 - !Ref DashboardUserPoolClient
 
+  SimplifyDiscoveryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: job-discovery-simplify
+      CodeUri:
+        Bucket: !Ref LambdaArtifactBucket
+        Key: !Ref SimplifyLambdaCodeKey
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      MemorySize: 512
+      Timeout: 900
+      Environment:
+        Variables:
+          RECORDS_TABLE: !Ref RecordsTableName
+          LISTINGS_TABLE: !Ref ListingsTableName
+          DEDUP_KEYS_TABLE: !Ref DedupKeysTableName
+          SOURCE_LOOKUP_TABLE: !Ref SourceLookupTableName
+          USER_DATA_TABLE: !Ref DashboardUserDataTable
+      Policies:
+        - Statement:
+            - Sid: ReadWriteDiscoveryTables
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource:
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RecordsTableName}
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ListingsTableName}
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DedupKeysTableName}
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SourceLookupTableName}
+                - !GetAtt DashboardUserDataTable.Arn
+      Events:
+        DailyNewGradDiscovery:
+          Type: ScheduleV2
+          Properties:
+            Name: job-discovery-simplify-managed
+            Description: Run the two curated new-grad feeds once per Toronto day
+            ScheduleExpression: cron(30 10 * * ? *)
+            ScheduleExpressionTimezone: America/Toronto
+            FlexibleTimeWindow:
+              Mode: 'OFF'
+            State: ENABLED
+            Input: '{}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 3600
+              MaximumRetryAttempts: 1
+
   DashboardReadFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -175,6 +230,7 @@ Resources:
           SCORING_FUNCTION_NAME: !Ref PersonalizedScoringFunction
           WORKDAY_FUNCTION_NAME: !Ref WorkdayFunctionName
           JOBSPY_FUNCTION_NAME: !Ref JobSpyFunctionName
+          SIMPLIFY_FUNCTION_NAME: !Ref SimplifyDiscoveryFunction
       Policies:
         - Statement:
             - Sid: ReadDashboardTables
@@ -206,6 +262,7 @@ Resources:
               Resource:
                 - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${WorkdayFunctionName}
                 - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${JobSpyFunctionName}
+                - !GetAtt SimplifyDiscoveryFunction.Arn
       Events:
         GetBootstrap:
           Type: HttpApi

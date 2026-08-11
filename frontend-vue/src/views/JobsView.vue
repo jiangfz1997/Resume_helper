@@ -14,6 +14,7 @@
 
     <section class="filters">
       <n-input v-model:value="search" clearable placeholder="Search title, company, or location..." class="search" />
+      <n-select v-model:value="feed" :options="feedOptions" />
       <n-select v-model:value="category" :options="categoryOptions" />
       <n-select v-model:value="runFilter" :options="runOptions" />
       <n-select v-model:value="eligibility" :options="eligibilityOptions" />
@@ -208,6 +209,7 @@ const scoringQueue = ref<ScoringQueueSummary>({ eligibleTotal: 0, scoredCurrent:
 const queuedJobIds = ref(new Set<string>())
 const blockedCompanies = ref(new Set<string>())
 const search = ref('')
+const feed = ref('all')
 const category = ref('all')
 const runFilter = ref('all')
 const eligibility = ref('actionable')
@@ -218,6 +220,13 @@ const status = ref<StatusFilter>('pending')
 const descriptionExpanded = ref(false)
 
 const categoryOptions = [{ label: 'All tracks', value: 'all' }, { label: 'SDE', value: 'sde' }, { label: 'QA', value: 'qa' }]
+const feedOptions = [
+  { label: 'All sources', value: 'all' },
+  { label: 'Regular discovery', value: 'regular' },
+  { label: 'New Grad · all', value: 'new_grad' },
+  { label: 'NG · Simplify Canada', value: 'simplify_canada' },
+  { label: 'NG · GitHub list', value: 'simplify_github' },
+]
 const eligibilityOptions = [{ label: 'Actionable roles', value: 'actionable' }, { label: 'Eligible', value: 'eligible' }, { label: 'Needs review', value: 'review' }, { label: 'Excluded', value: 'excluded' }, { label: 'All decisions', value: 'all' }]
 const scoreOptions = [{ label: 'Any score', value: 'all' }, { label: 'Scored roles', value: 'scored' }, { label: 'Strong · 8+', value: 'strong' }, { label: 'Potential · 5+', value: 'potential' }, { label: 'Not scored', value: 'unscored' }]
 const freshnessOptions = [{ label: 'Current roles', value: 'current' }, { label: 'Active only', value: 'active' }, { label: 'Archived', value: 'archived' }, { label: 'All ages', value: 'all' }]
@@ -237,6 +246,10 @@ const filteredJobs = computed(() => jobs.value.filter((job) => {
   if (blockedCompanies.value.has(normalizeCompany(job.company))) return false
   const query = search.value.trim().toLowerCase()
   if (query && !`${job.title} ${job.company} ${job.location}`.toLowerCase().includes(query)) return false
+  const newGradSources = ['simplify_canada', 'simplify_github']
+  if (feed.value === 'regular' && job.sources.some((source) => newGradSources.includes(source))) return false
+  if (feed.value === 'new_grad' && !job.isNewGrad && !job.sources.some((source) => newGradSources.includes(source))) return false
+  if (newGradSources.includes(feed.value) && !job.sources.includes(feed.value)) return false
   if (category.value !== 'all' && job.jobCategory !== category.value) return false
   if (runFilter.value !== 'all' && job.firstDiscoveredRunId !== runFilter.value) return false
   if (freshness.value === 'current' && job.lifecycleStatus === 'archived') return false
@@ -373,7 +386,7 @@ function isPlainTextHeading(value: string): boolean {
 }
 function initials(company: string): string { return company.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase() }
 function workplaceLabel(value: WorkplaceType): string { return ({ remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site', unknown: 'Workplace unknown' } satisfies Record<WorkplaceType, string>)[value] }
-function sourceLabel(value: string): string { return ({ workday: 'Workday', indeed: 'Indeed', linkedin: 'LinkedIn', zip_recruiter: 'ZipRecruiter' } as Record<string, string>)[value] ?? value }
+function sourceLabel(value: string): string { return ({ workday: 'Workday', indeed: 'Indeed', linkedin: 'LinkedIn', zip_recruiter: 'ZipRecruiter', simplify_canada: 'Simplify Canada NG', simplify_github: 'GitHub New Grad' } as Record<string, string>)[value] ?? value }
 function statusLabel(value: JobUserStatus): string { return ({ new: 'New', saved: 'Saved', selected: 'Shortlist', applied: 'Applied', rejected: 'Rejected' } satisfies Record<JobUserStatus, string>)[value] }
 // A score stays visible after a profile edit instead of vanishing. Hiding it
 // used to be harmless because the next scheduled run recomputed it within a
@@ -489,7 +502,7 @@ async function sendToGenerate(job: DashboardJob): Promise<void> {
   if (statusFor(job.jobId) !== 'selected') await toggleStatus(job.jobId, 'selected')
   router.push('/generate')
 }
-function resetFilters(): void { search.value = ''; category.value = 'all'; runFilter.value = 'all'; eligibility.value = 'actionable'; score.value = 'all'; freshness.value = 'current'; status.value = 'pending' }
+function resetFilters(): void { search.value = ''; feed.value = 'all'; category.value = 'all'; runFilter.value = 'all'; eligibility.value = 'actionable'; score.value = 'all'; freshness.value = 'current'; status.value = 'pending' }
 </script>
 
 <style scoped>
@@ -501,7 +514,7 @@ function resetFilters(): void { search.value = ''; category.value = 'all'; runFi
 .snapshot { display:flex; align-items:center; gap:10px; min-width:180px; padding:12px 15px; border:1px solid var(--border); border-radius:10px; background:rgba(18,21,28,.75); }
 .snapshot i { width:8px; height:8px; border-radius:50%; background:#46d19a; box-shadow:0 0 0 4px rgba(70,209,154,.1); }
 .snapshot div { display:flex; flex-direction:column; }.snapshot b{font-size:12px}.snapshot small{color:var(--muted);font-size:10px}
-.filters { display:grid; grid-template-columns:minmax(250px,1fr) repeat(6,125px); gap:8px; max-width:1500px; margin:auto; padding:10px; border:1px solid var(--border); border-radius:10px; background:rgba(18,21,28,.92); }
+.filters { display:grid; grid-template-columns:minmax(250px,1fr) repeat(7,125px); gap:8px; max-width:1500px; margin:auto; padding:10px; border:1px solid var(--border); border-radius:10px; background:rgba(18,21,28,.92); }
 .run-health{display:flex;align-items:center;gap:16px;max-width:1470px;margin:10px auto 0;padding:9px 14px;border:1px solid var(--border);border-radius:8px;color:#9da8b8;background:rgba(18,21,28,.7);font-size:11px}.run-health b{color:#dce3ed}.run-health strong{margin-left:auto;color:#e87783}.run-health.is-ok{border-color:rgba(75,212,157,.2)}.run-health.is-partial,.run-health.is-failed{border-color:rgba(232,119,131,.3)}
 .tabs { display:flex; align-items:center; gap:4px; max-width:1500px; margin:15px auto 10px; }.tabs button{padding:7px 10px;border:0;border-radius:7px;color:var(--muted);background:transparent;font:12px inherit;cursor:pointer}.tabs button:hover,.tabs button.active{color:#edf1f7;background:#1b202b}.tabs button span{margin-left:5px;color:#687487;font-size:10px}.tabs>small{margin-left:auto;color:#687487}
 .workspace { display:grid; grid-template-columns:minmax(390px,.82fr) minmax(520px,1.18fr); gap:12px; max-width:1500px; height:calc(100vh - 250px); min-height:520px; margin:auto; }

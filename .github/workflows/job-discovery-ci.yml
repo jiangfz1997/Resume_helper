@@ -52,6 +52,7 @@ jobs:
         run: |
           python job-discovery/lambda_workday/build.py
           python job-discovery/lambda_jobspy/build.py
+          python job-discovery/lambda_simplify/build.py
           python job-discovery/lambda_dashboard/build.py
           python job-discovery/lambda_scoring/build.py
 
@@ -69,6 +70,7 @@ jobs:
           packages=(
             job-discovery/lambda_workday/dist/lambda-workday.zip
             job-discovery/lambda_jobspy/dist/lambda-jobspy.zip
+            job-discovery/lambda_simplify/dist/lambda-simplify.zip
             job-discovery/lambda_dashboard/dist/lambda-dashboard.zip
             job-discovery/lambda_scoring/dist/lambda-scoring.zip
           )
@@ -84,6 +86,7 @@ jobs:
           path: |
             job-discovery/lambda_workday/dist/lambda-workday.zip
             job-discovery/lambda_jobspy/dist/lambda-jobspy.zip
+            job-discovery/lambda_simplify/dist/lambda-simplify.zip
             job-discovery/lambda_dashboard/dist/lambda-dashboard.zip
             job-discovery/lambda_scoring/dist/lambda-scoring.zip
           if-no-files-found: error

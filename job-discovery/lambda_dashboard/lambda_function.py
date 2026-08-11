@@ -183,7 +183,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if route_key == "POST /actions/crawler":
             request = ManualCrawlerRequest.model_validate_json(event.get("body") or "{}")
             run_id = f"manual-{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}-{uuid4().hex[:8]}"
-            crawlers = ["workday", "jobspy"] if request.crawler == "both" else [request.crawler]
+            if request.crawler == "all":
+                crawlers = ["workday", "jobspy", "simplify"]
+            elif request.crawler == "both":
+                crawlers = ["workday", "jobspy"]
+            else:
+                crawlers = [request.crawler]
             _invoke_crawlers(crawlers, run_id)
             return _response(202, {"ok": True, "run_id": run_id, "crawlers": crawlers})
         if route_key == "GET /user-state":
@@ -281,12 +286,20 @@ def _invoke_crawlers(crawlers: list[str], run_id: str) -> None:
     function_names = {
         "workday": os.environ["WORKDAY_FUNCTION_NAME"],
         "jobspy": os.environ["JOBSPY_FUNCTION_NAME"],
+        "simplify": os.environ["SIMPLIFY_FUNCTION_NAME"],
+        "simplify_canada": os.environ["SIMPLIFY_FUNCTION_NAME"],
+        "simplify_github": os.environ["SIMPLIFY_FUNCTION_NAME"],
     }
     for crawler in crawlers:
+        payload: dict[str, Any] = {"run_id": run_id}
+        if crawler == "simplify_canada":
+            payload["feeds"] = ["canada"]
+        elif crawler == "simplify_github":
+            payload["feeds"] = ["github"]
         _lambda_client.invoke(
             FunctionName=function_names[crawler],
             InvocationType="Event",
-            Payload=json.dumps({"run_id": run_id}).encode("utf-8"),
+            Payload=json.dumps(payload).encode("utf-8"),
         )
 
 

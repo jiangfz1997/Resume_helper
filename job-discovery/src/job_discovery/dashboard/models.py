@@ -190,7 +190,9 @@ class ManualScoringRequest(BaseModel):
 
 
 class ManualCrawlerRequest(BaseModel):
-    crawler: Literal["workday", "jobspy", "both"] = "both"
+    crawler: Literal[
+        "workday", "jobspy", "simplify", "simplify_canada", "simplify_github", "both", "all"
+    ] = "both"
 
 
 class DashboardBootstrap(BaseModel):

@@ -96,9 +96,12 @@ An explicit `job_ids` payload ignores the age window, so the dashboard's
 This conservative batch size leaves retry headroom inside Lambda's 15-minute
 maximum. Repeated runs skip unchanged `(user, job, profile, prompt)` versions.
 
-The crawler schedules target the existing `job-discovery-workday` and
-`job-discovery-jobspy` functions. The dedicated Discovery stack will manage the
-invocation role and schedules without replacing or recreating those Lambdas.
+The retained Discovery stack targets the existing `job-discovery-workday` and
+`job-discovery-jobspy` functions. The Dashboard SAM stack automatically creates
+`job-discovery-simplify`, its IAM permissions/environment, and its 10:30 Toronto
+schedule. Its 900-second timeout leaves room to read the full public list index
+and then fetch complete JDs only for titles and locations allowed by the saved
+discovery settings.
 
 ## Required runtime configuration
 
@@ -122,10 +125,12 @@ The dashboard derives lifecycle from the newest listing `last_seen_at`: less
 than 7 days is active, 7-29 days is stale, and 30 days or more is archived.
 This is a reversible display state; no DynamoDB job is deleted.
 
-The crawler deployment workflow requires `WORKDAY_FUNCTION_NAME` and
-`JOBSPY_FUNCTION_NAME`. The scoring function remains SAM-managed and does not
-use a direct-deployment function-name variable.
+The legacy crawler deployment workflow requires `WORKDAY_FUNCTION_NAME` and
+`JOBSPY_FUNCTION_NAME`. Simplify and scoring are SAM-managed and do not use
+direct-deployment function-name variables.
 
 The retained schedules use the names `job-discovery-workday-managed` and
 `job-discovery-jobspy-managed`. Do not create another set while the retained
 resources wait for import, or each crawler will be invoked twice.
+The New Grad crawler uses `job-discovery-simplify-managed` and runs at 10:30
+Toronto time, after the two general crawlers.

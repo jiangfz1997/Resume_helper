@@ -11,12 +11,24 @@ def _template() -> dict[str, object]:
     return yaml.load(TEMPLATE_PATH.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
-def test_dashboard_stack_does_not_own_discovery_schedules() -> None:
+def test_dashboard_stack_does_not_own_legacy_discovery_schedules() -> None:
     resources = _template()["Resources"]
 
     assert "DiscoverySchedulerRole" not in resources
     assert "WorkdayDiscoverySchedule" not in resources
     assert "JobSpyDiscoverySchedule" not in resources
+
+
+def test_simplify_function_and_schedule_are_sam_managed() -> None:
+    properties = _template()["Resources"]["SimplifyDiscoveryFunction"]["Properties"]
+    schedule = properties["Events"]["DailyNewGradDiscovery"]["Properties"]
+
+    assert properties["FunctionName"] == "job-discovery-simplify"
+    assert properties["Timeout"] == "900"
+    assert properties["Environment"]["Variables"]["USER_DATA_TABLE"] == "DashboardUserDataTable"
+    assert schedule["Name"] == "job-discovery-simplify-managed"
+    assert schedule["ScheduleExpression"] == "cron(30 10 * * ? *)"
+    assert schedule["ScheduleExpressionTimezone"] == "America/Toronto"
 
 
 def test_scoring_schedule_runs_after_discovery() -> None:

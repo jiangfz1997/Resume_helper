@@ -5,6 +5,7 @@ import type {
   DashboardRunSummary,
   DashboardUserState,
   DiscoverySettings,
+  DiscoveryCrawler,
   EligibilityStatus,
   JobCategory,
   JobDataSource,
@@ -199,7 +200,7 @@ export class ApiJobDataSource implements JobDataSource {
     }
   }
 
-  async runCrawler(crawler: 'workday' | 'jobspy' | 'both'): Promise<ManualCrawlerResult> {
+  async runCrawler(crawler: DiscoveryCrawler): Promise<ManualCrawlerResult> {
     const result = await this.request<ApiManualCrawlerResult>('/actions/crawler', {
       method: 'POST',
       body: JSON.stringify({ crawler }),
@@ -328,7 +329,7 @@ interface ApiManualScoringResult {
 
 interface ApiManualCrawlerResult {
   run_id: string
-  crawlers: Array<'workday' | 'jobspy'>
+  crawlers: Array<'workday' | 'jobspy' | 'simplify' | 'simplify_canada' | 'simplify_github'>
 }
 
 interface ApiDiscoverySettings {
