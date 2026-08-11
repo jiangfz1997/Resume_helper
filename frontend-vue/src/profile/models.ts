@@ -43,6 +43,11 @@ export interface Skill {
   proficiency?: ProficiencyLevel | null
 }
 
+export interface ResumeSkillGroup {
+  category: string
+  items: string[]
+}
+
 export interface CandidateProfileInput {
   schema_version?: 1
   full_name: string
@@ -51,6 +56,7 @@ export interface CandidateProfileInput {
   work_experiences?: WorkExperience[]
   educations?: Education[]
   projects?: Project[]
+  resume_skills?: ResumeSkillGroup[]
   skills?: Skill[]
 }
 
@@ -62,6 +68,7 @@ export interface CandidateProfile extends CandidateProfileInput {
   work_experiences: WorkExperience[]
   educations: Education[]
   projects: Project[]
+  resume_skills?: ResumeSkillGroup[]
   skills: Skill[]
 }
 

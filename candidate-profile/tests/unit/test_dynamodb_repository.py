@@ -9,6 +9,7 @@ from candidate_profile.domain.models import (
     CreateApplicationFromJob,
     ExtractedJobInfo,
     Project,
+    ResumeSkillGroup,
     UpdateApplicationFields,
     WorkExperience,
 )
@@ -60,6 +61,7 @@ def test_profile_replace_increments_version_and_preserves_generated_item_ids() -
             full_name="Ada Lovelace",
             work_experiences=[WorkExperience(company="Acme", title="Engineer")],
             projects=[Project(name="Engine")],
+            resume_skills=[ResumeSkillGroup(category="Languages", items=["Python", "Java"])],
         ),
     )
 
@@ -75,6 +77,7 @@ def test_profile_replace_increments_version_and_preserves_generated_item_ids() -
     assert second.summary == "Updated profile"
     assert second.work_experiences[0].id == first.work_experiences[0].id
     assert second.projects[0].id == first.projects[0].id
+    assert second.resume_skills[0].items == ["Python", "Java"]
 
 
 @mock_aws

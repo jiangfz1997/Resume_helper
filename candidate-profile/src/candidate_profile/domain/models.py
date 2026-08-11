@@ -57,6 +57,13 @@ class Skill(BaseModel):
     proficiency: ProficiencyLevel | None = None
 
 
+class ResumeSkillGroup(BaseModel):
+    """A resume-ready skill line; deliberately carries no proficiency rating."""
+
+    category: str
+    items: list[str] = Field(default_factory=list)
+
+
 class CandidateProfileInput(BaseModel):
     schema_version: Literal[1] = 1
     # Kept optional-at-rest for profiles created before JSON import existed.
@@ -67,6 +74,9 @@ class CandidateProfileInput(BaseModel):
     work_experiences: list[WorkExperience] = Field(default_factory=list)
     educations: list[Education] = Field(default_factory=list)
     projects: list[Project] = Field(default_factory=list)
+    resume_skills: list[ResumeSkillGroup] = Field(default_factory=list)
+    # Legacy structured skills are retained for compatibility and possible
+    # future scoring use. Resume rendering should prefer resume_skills.
     skills: list[Skill] = Field(default_factory=list)
 
 

@@ -40,7 +40,7 @@
           <div><b>{{ profile?.work_experiences.length ?? 0 }}</b><span>Work experiences</span></div>
           <div><b>{{ profile?.projects.length ?? 0 }}</b><span>Projects</span></div>
           <div><b>{{ profile?.educations.length ?? 0 }}</b><span>Education entries</span></div>
-          <div><b>{{ profile?.skills.length ?? 0 }}</b><span>Skills</span></div>
+          <div><b>{{ resumeSkillCount }}</b><span>Resume skills</span></div>
         </div>
       </section>
 
@@ -132,8 +132,14 @@
           </n-card>
 
           <n-card title="Skills" size="small">
-            <n-empty v-if="!profile?.skills.length" description="No skills" size="small" />
-            <div v-for="(skills, category) in groupedSkills" :key="category" class="skill-group">
+            <n-empty v-if="!profile?.resume_skills?.length && !profile?.skills.length" description="No skills" size="small" />
+            <div v-for="group in profile?.resume_skills" :key="group.category" class="skill-group">
+              <strong>{{ group.category }}</strong>
+              <n-space size="small">
+                <n-tag v-for="item in group.items" :key="item" size="small">{{ item }}</n-tag>
+              </n-space>
+            </div>
+            <div v-if="!profile?.resume_skills?.length" v-for="(skills, category) in groupedSkills" :key="category" class="skill-group">
               <strong>{{ category }}</strong>
               <n-space size="small">
                 <n-tag v-for="skill in skills" :key="skill.name" size="small">{{ skill.name }}</n-tag>
@@ -168,6 +174,13 @@ const groupedSkills = computed<Record<string, Skill[]>>(() => {
     ;(groups[skill.category] ??= []).push(skill)
   }
   return groups
+})
+
+const resumeSkillCount = computed(() => {
+  if (profile.value?.resume_skills?.length) {
+    return profile.value.resume_skills.reduce((total, group) => total + group.items.length, 0)
+  }
+  return profile.value?.skills.length ?? 0
 })
 
 onMounted(loadProfile)
@@ -230,6 +243,7 @@ function downloadProfile(): void {
     work_experiences: profile.value.work_experiences,
     educations: profile.value.educations,
     projects: profile.value.projects,
+    resume_skills: profile.value.resume_skills ?? [],
     skills: profile.value.skills,
   }
   const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' })
@@ -263,6 +277,7 @@ function parseProfileJson(raw: string): CandidateProfileInput {
   validateObjectList(root.work_experiences, 'work_experiences', ['id', 'company', 'title', 'location', 'start_date', 'end_date'], ['bullets'])
   validateObjectList(root.educations, 'educations', ['institution', 'degree', 'field_of_study', 'start_date', 'end_date', 'gpa'], [])
   validateObjectList(root.projects, 'projects', ['id', 'name', 'description', 'url'], ['bullets', 'tech_stack'])
+  validateResumeSkills(root.resume_skills)
   validateSkills(root.skills)
   return {
     schema_version: 1,
@@ -272,6 +287,7 @@ function parseProfileJson(raw: string): CandidateProfileInput {
     work_experiences: (root.work_experiences ?? []) as CandidateProfileInput['work_experiences'],
     educations: (root.educations ?? []) as CandidateProfileInput['educations'],
     projects: (root.projects ?? []) as CandidateProfileInput['projects'],
+    resume_skills: (root.resume_skills ?? []) as CandidateProfileInput['resume_skills'],
     skills: (root.skills ?? []) as Skill[],
   }
 }
@@ -334,6 +350,16 @@ function validateSkills(value: unknown): void {
   })
 }
 
+function validateResumeSkills(value: unknown): void {
+  if (value === undefined) return
+  if (!Array.isArray(value)) throw new Error('resume_skills must be an array.')
+  value.forEach((entry, index) => {
+    const group = requireObject(entry, `resume_skills[${index}]`)
+    requireString(group.category, `resume_skills[${index}].category`)
+    validateStringArray(group.items, `resume_skills[${index}].items`)
+  })
+}
+
 function dateRange(start?: string, end?: string | null): string {
   return `${start || 'Unknown'} – ${end || 'Present'}`
 }
@@ -360,7 +386,14 @@ const EXAMPLE_PROFILE: CandidateProfileInput = {
     name: 'Job Discovery Platform', description: 'Serverless job discovery and resume tailoring platform.',
     bullets: ['Designed the serverless architecture.'], tech_stack: ['Python', 'AWS Lambda', 'DynamoDB', 'Vue'], url: null,
   }],
-  skills: [{ category: 'Languages', name: 'Python', proficiency: 'expert' }],
+  resume_skills: [
+    { category: 'Certification', items: ['AWS Certified Solutions Architect – Associate (SAA-C03), 2026'] },
+    { category: 'Languages', items: ['Python', 'Java', 'JavaScript', 'C#', 'SQL (PostgreSQL, MySQL)'] },
+    { category: 'Testing & Performance', items: ['Test Automation', 'Performance Testing', 'API Testing', 'Test Framework Development', 'CI/CD', 'Jira', 'Agile/Scrum'] },
+    { category: 'Backend & Cloud', items: ['Spring Boot', 'FastAPI', 'Node.js', 'Vue.js', 'Docker', 'Kubernetes', 'AWS Services'] },
+    { category: 'Data & Observability', items: ['Redis', 'Kafka', 'MongoDB', 'Prometheus', 'Grafana', 'AWS CloudWatch'] },
+  ],
+  skills: [],
 }
 </script>
 
