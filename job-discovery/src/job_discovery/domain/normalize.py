@@ -165,6 +165,9 @@ def build_candidate(observation: SourceJobObservation) -> NormalizedJobCandidate
     title = observation.title_raw.strip()
     years = extract_years(description)
     seniority = assess_seniority(title, description)
+    new_grad_signals = list(seniority.signals)
+    if observation.new_grad_hint and observation.new_grad_hint not in new_grad_signals:
+        new_grad_signals.append(observation.new_grad_hint)
 
     return NormalizedJobCandidate(
         source=observation.source,
@@ -189,8 +192,8 @@ def build_candidate(observation: SourceJobObservation) -> NormalizedJobCandidate
         required_years_min=years.minimum,
         required_years_max=years.maximum,
         years_mentioned=years.mentioned,
-        is_new_grad=seniority.is_new_grad,
-        new_grad_signals=seniority.signals,
+        is_new_grad=seniority.is_new_grad or observation.new_grad_hint is not None,
+        new_grad_signals=new_grad_signals,
         observed_at=observation.observed_at,
         run_id=observation.run_id,
     )

@@ -274,6 +274,7 @@ def test_manual_crawler_invokes_selected_functions_with_one_run_id(monkeypatch) 
     monkeypatch.setenv("REQUIRE_AUTH", "true")
     monkeypatch.setenv("WORKDAY_FUNCTION_NAME", "workday-function")
     monkeypatch.setenv("JOBSPY_FUNCTION_NAME", "jobspy-function")
+    monkeypatch.setenv("SIMPLIFY_FUNCTION_NAME", "simplify-function")
     module = _load_lambda()
     module._lambda_client = FakeLambdaClient()
     event = {
@@ -289,6 +290,35 @@ def test_manual_crawler_invokes_selected_functions_with_one_run_id(monkeypatch) 
     assert response["statusCode"] == 202
     assert [call["FunctionName"] for call in invocations] == ["workday-function", "jobspy-function"]
     assert payloads == [{"run_id": body["run_id"]}, {"run_id": body["run_id"]}]
+
+
+def test_manual_crawler_can_run_each_new_grad_feed_independently(monkeypatch) -> None:
+    invocations: list[dict] = []
+
+    class FakeLambdaClient:
+        def invoke(self, **kwargs: object) -> None:
+            invocations.append(kwargs)
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    monkeypatch.setenv("WORKDAY_FUNCTION_NAME", "workday-function")
+    monkeypatch.setenv("JOBSPY_FUNCTION_NAME", "jobspy-function")
+    monkeypatch.setenv("SIMPLIFY_FUNCTION_NAME", "simplify-function")
+    module = _load_lambda()
+    module._lambda_client = FakeLambdaClient()
+    event = {
+        "routeKey": "POST /actions/crawler",
+        "body": '{"crawler":"simplify_canada"}',
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
+    }
+
+    response = module.lambda_handler(event, None)
+    body = json.loads(response["body"])
+    payload = json.loads(invocations[0]["Payload"].decode("utf-8"))
+
+    assert response["statusCode"] == 202
+    assert body["crawlers"] == ["simplify_canada"]
+    assert invocations[0]["FunctionName"] == "simplify-function"
+    assert payload == {"run_id": body["run_id"], "feeds": ["canada"]}
 
 
 def test_missing_claims_cannot_block_a_company(monkeypatch) -> None:

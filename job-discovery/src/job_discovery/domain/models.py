@@ -27,6 +27,8 @@ class SourceName(str, Enum):
     LEVER = "lever"
     INDEED = "indeed"
     LINKEDIN = "linkedin"
+    SIMPLIFY_CANADA = "simplify_canada"
+    SIMPLIFY_GITHUB = "simplify_github"
 
 
 class WorkplaceType(str, Enum):
@@ -143,6 +145,10 @@ class SourceJobObservation(BaseModel):
     posted_at_raw: str | None = None
     description_raw: str | None = None
     salary_text_raw: str | None = None
+    # Curated feeds can guarantee that every row is a new-grad role even when
+    # the title/JD does not literally contain "new grad" (for example
+    # "Software Engineer I"). This is source metadata, not an LLM guess.
+    new_grad_hint: str | None = None
     observed_at: datetime
     run_id: str
 

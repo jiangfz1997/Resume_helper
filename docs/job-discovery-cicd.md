@@ -64,16 +64,17 @@ existing parameters, so no additional GitHub variables are required.
 ### Dashboard API deployment
 
 `.github/workflows/deploy-dashboard.yml` runs after dashboard, scoring, shared
-domain/repository, or dashboard infrastructure paths reach `main`, or by manual
-dispatch. It builds two packages and deploys `infra/dashboard-api.yaml`:
+domain/repository/source, or dashboard infrastructure paths reach `main`, or by
+manual dispatch. It builds three packages and deploys `infra/dashboard-api.yaml`:
 
 - `job-dashboard-read`
 - `job-discovery-score`
+- `job-discovery-simplify`
 
 The SAM stack also owns Cognito, the retained dashboard user-data table, the
-HTTP API, and the personalized-scoring schedule. The crawler Lambda functions,
-crawler schedules, Scheduler role, and four shared crawler DynamoDB tables are
-outside this stack.
+HTTP API, the personalized-scoring schedule, and both the function and daily
+schedule for the new Simplify crawler. The legacy Workday/JobSpy functions and
+schedules plus the four shared crawler DynamoDB tables remain outside this stack.
 
 ### Candidate Profile deployment
 

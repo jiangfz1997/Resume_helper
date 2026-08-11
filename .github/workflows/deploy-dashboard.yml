@@ -9,10 +9,12 @@ on:
       - "job-discovery/infra/dashboard-api.yaml"
       - "job-discovery/lambda_dashboard/**"
       - "job-discovery/lambda_scoring/**"
+      - "job-discovery/lambda_simplify/**"
       - "job-discovery/src/job_discovery/application/**"
       - "job-discovery/src/job_discovery/dashboard/**"
       - "job-discovery/src/job_discovery/domain/**"
       - "job-discovery/src/job_discovery/repositories/**"
+      - "job-discovery/src/job_discovery/sources/**"
       - "job-discovery/src/job_discovery/scoring/**"
       - ".github/workflows/deploy-dashboard.yml"
 
@@ -60,6 +62,7 @@ jobs:
         run: |
           python job-discovery/lambda_dashboard/build.py
           python job-discovery/lambda_scoring/build.py
+          python job-discovery/lambda_simplify/build.py
 
       - name: Set up AWS SAM
         uses: aws-actions/setup-sam@v2
@@ -86,13 +89,18 @@ jobs:
         run: |
           dashboard_code_key="job-discovery/${GITHUB_SHA}/lambda-dashboard.zip"
           scoring_code_key="job-discovery/${GITHUB_SHA}/lambda-scoring.zip"
+          simplify_code_key="job-discovery/${GITHUB_SHA}/lambda-simplify.zip"
           echo "DASHBOARD_CODE_KEY=${dashboard_code_key}" >> "$GITHUB_ENV"
           echo "SCORING_CODE_KEY=${scoring_code_key}" >> "$GITHUB_ENV"
+          echo "SIMPLIFY_CODE_KEY=${simplify_code_key}" >> "$GITHUB_ENV"
           aws s3 cp job-discovery/lambda_dashboard/dist/lambda-dashboard.zip \
             "s3://${LAMBDA_ARTIFACT_BUCKET}/${dashboard_code_key}" \
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
           aws s3 cp job-discovery/lambda_scoring/dist/lambda-scoring.zip \
             "s3://${LAMBDA_ARTIFACT_BUCKET}/${scoring_code_key}" \
+            --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
+          aws s3 cp job-discovery/lambda_simplify/dist/lambda-simplify.zip \
+            "s3://${LAMBDA_ARTIFACT_BUCKET}/${simplify_code_key}" \
             --metadata "git-sha=${GITHUB_SHA}" --only-show-errors
 
       - name: Deploy dashboard API
@@ -117,5 +125,6 @@ jobs:
               LambdaArtifactBucket="$LAMBDA_ARTIFACT_BUCKET" \
               DashboardLambdaCodeKey="$DASHBOARD_CODE_KEY" \
               ScoringLambdaCodeKey="$SCORING_CODE_KEY" \
+              SimplifyLambdaCodeKey="$SIMPLIFY_CODE_KEY" \
               GeminiApiKey="$GEMINI_API_KEY" \
               GeminiModel="$GEMINI_MODEL"

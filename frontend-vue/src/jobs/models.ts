@@ -154,8 +154,10 @@ export interface ManualScoringResult {
 
 export interface ManualCrawlerResult {
   runId: string
-  crawlers: Array<'workday' | 'jobspy'>
+  crawlers: Array<'workday' | 'jobspy' | 'simplify' | 'simplify_canada' | 'simplify_github'>
 }
+
+export type DiscoveryCrawler = 'workday' | 'jobspy' | 'simplify' | 'simplify_canada' | 'simplify_github' | 'both' | 'all'
 
 export interface DashboardJob extends DashboardJobSummary, JobRecord {
   listings: JobListing[]
@@ -179,7 +181,7 @@ export interface JobDataSource {
   getScoringQueue(): Promise<ScoringQueueSummary>
   scoreJob(jobId: string): Promise<void>
   scoreRun(runId: string, limit: number): Promise<ManualScoringResult>
-  runCrawler(crawler: 'workday' | 'jobspy' | 'both'): Promise<ManualCrawlerResult>
+  runCrawler(crawler: DiscoveryCrawler): Promise<ManualCrawlerResult>
   getUserState(): Promise<DashboardUserState>
   markJobViewed(jobId: string): Promise<void>
   setJobStatus(jobId: string, status: JobUserStatus): Promise<void>

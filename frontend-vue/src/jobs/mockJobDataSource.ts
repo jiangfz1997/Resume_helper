@@ -10,6 +10,7 @@ import type {
   DashboardRunSummary,
   DashboardUserState,
   DiscoverySettings,
+  DiscoveryCrawler,
   EligibilityStatus,
   JobDataSource,
   JobListing,
@@ -191,10 +192,10 @@ export class MockJobDataSource implements JobDataSource {
     return { runId, eligible: eligible.length, remaining: remaining.length, queued: Math.min(limit, remaining.length) }
   }
 
-  async runCrawler(crawler: 'workday' | 'jobspy' | 'both'): Promise<ManualCrawlerResult> {
+  async runCrawler(crawler: DiscoveryCrawler): Promise<ManualCrawlerResult> {
     return {
       runId: `manual-${new Date().toISOString()}`,
-      crawlers: crawler === 'both' ? ['workday', 'jobspy'] : [crawler],
+      crawlers: crawler === 'all' ? ['workday', 'jobspy', 'simplify'] : crawler === 'both' ? ['workday', 'jobspy'] : [crawler],
     }
   }
 

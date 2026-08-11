@@ -98,7 +98,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { jobDataSource } from '../jobs/dataSource'
-import type { DashboardRunSummary, DiscoverySettings, ScoringProfileSettings } from '../jobs/models'
+import type { DashboardRunSummary, DiscoveryCrawler, DiscoverySettings, ScoringProfileSettings } from '../jobs/models'
 
 const message = useMessage()
 const loading = ref(true)
@@ -121,10 +121,14 @@ const blockedCompanies = ref<string[]>([])
 const unblocking = ref('')
 const scoringRunId = ref<string | null>(null)
 const scoringLimit = ref(20)
-const crawler = ref<'workday' | 'jobspy' | 'both'>('both')
+const crawler = ref<DiscoveryCrawler>('all')
 
 const crawlerOptions = [
+  { label: 'All (Workday + JobSpy + New Grad)', value: 'all' },
   { label: 'Both (Workday + JobSpy)', value: 'both' },
+  { label: 'New Grad feeds (Simplify + GitHub)', value: 'simplify' },
+  { label: 'New Grad · Simplify Canada only', value: 'simplify_canada' },
+  { label: 'New Grad · GitHub list only', value: 'simplify_github' },
   { label: 'Workday', value: 'workday' },
   { label: 'JobSpy', value: 'jobspy' },
 ]
