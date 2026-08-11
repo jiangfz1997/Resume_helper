@@ -65,7 +65,12 @@ const route = useRoute()
 const activeKey = computed(() => route.path)
 
 const contentStyle = computed(() => {
-  if (route.path === '/generate' || route.path === '/jobs' || route.path === '/job-settings') {
+  if (
+    route.path === '/generate'
+    || route.path === '/jobs'
+    || route.path === '/job-settings'
+    || (route.path === '/profile' && authMode === 'cognito')
+  ) {
     return { padding: '0', maxWidth: '100%', margin: '0', overflow: 'hidden', height: 'calc(100vh - 56px)' }
   }
   // Applications is a table, not prose: 960px wraps company and title onto
@@ -91,7 +96,9 @@ const menuOptions: MenuOption[] = [
 
 const visibleMenuOptions = computed(() => {
   if (!auth.isAuthenticated) return menuOptions.slice(0, 1)
-  return authMode === 'cognito' ? menuOptions.slice(0, 3) : menuOptions
+  return authMode === 'cognito'
+    ? menuOptions.filter((option) => ['/jobs', '/applications', '/job-settings', '/profile'].includes(String(option.key)))
+    : menuOptions
 })
 
 const themeOverrides: GlobalThemeOverrides = {

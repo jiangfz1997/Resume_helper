@@ -27,7 +27,9 @@ const router = createRouter({
     },
     {
       path: '/profile',
-      component: () => import('../views/ProfileView.vue'),
+      component: authMode === 'cognito'
+        ? () => import('../views/CloudProfileView.vue')
+        : () => import('../views/ProfileView.vue'),
       meta: { requiresAuth: true },
     },
     {

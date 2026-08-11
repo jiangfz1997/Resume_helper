@@ -111,14 +111,30 @@ class DynamoDBCandidateProfileRepository:
 
     def save_profile(self, user_id: str, data: CandidateProfileInput) -> CandidateProfile:
         now = _now()
-        item = {
-            "user_id": user_id,
-            "entity_key": "PROFILE",
-            "entity_type": "profile",
-            **data.model_dump(mode="json"),
-            "updated_at": now,
+        payload = data.model_dump(mode="json")
+        names = {f"#{field}": field for field in payload}
+        values: dict[str, Any] = {
+            **{f":{field}": value for field, value in payload.items()},
+            ":entity_type": "profile",
+            ":updated_at": now,
+            ":zero": 0,
+            ":one": 1,
         }
-        self._table.put_item(Item=item)
+        assignments = [f"#{field} = :{field}" for field in payload]
+        assignments.extend(
+            [
+                "entity_type = :entity_type",
+                "updated_at = :updated_at",
+                "profile_version = if_not_exists(profile_version, :zero) + :one",
+            ]
+        )
+        item = self._table.update_item(
+            Key={"user_id": user_id, "entity_key": "PROFILE"},
+            UpdateExpression="SET " + ", ".join(assignments),
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+            ReturnValues="ALL_NEW",
+        )["Attributes"]
         return _to_profile(item)
 
     # ── applications ─────────────────────────────────────────
@@ -296,7 +312,12 @@ class DynamoDBCandidateProfileRepository:
 
 def _to_profile(item: dict[str, Any]) -> CandidateProfile:
     payload = {field: item[field] for field in CandidateProfileInput.model_fields if field in item}
-    return CandidateProfile(user_id=item["user_id"], updated_at=datetime.fromisoformat(item["updated_at"]), **payload)
+    return CandidateProfile(
+        user_id=item["user_id"],
+        profile_version=int(item.get("profile_version", 1)),
+        updated_at=datetime.fromisoformat(item["updated_at"]),
+        **payload,
+    )
 
 
 def _to_application(item: dict[str, Any]) -> JobApplication:
