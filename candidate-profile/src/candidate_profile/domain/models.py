@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +24,7 @@ class ProficiencyLevel(str, Enum):
 
 
 class WorkExperience(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     company: str = ""
     title: str = ""
     location: str = ""
@@ -40,6 +43,7 @@ class Education(BaseModel):
 
 
 class Project(BaseModel):
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
     name: str = ""
     description: str = ""
     bullets: list[str] = Field(default_factory=list)
@@ -54,6 +58,9 @@ class Skill(BaseModel):
 
 
 class CandidateProfileInput(BaseModel):
+    schema_version: Literal[1] = 1
+    # Kept optional-at-rest for profiles created before JSON import existed.
+    # The cloud importer requires a non-empty name before it sends a PUT.
     full_name: str = ""
     summary: str | None = None
     contact_info: ContactInfo | None = None
@@ -65,6 +72,7 @@ class CandidateProfileInput(BaseModel):
 
 class CandidateProfile(CandidateProfileInput):
     user_id: str
+    profile_version: int = Field(ge=1)
     updated_at: datetime
 
 

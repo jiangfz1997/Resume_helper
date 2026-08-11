@@ -8,6 +8,7 @@ declare module '*.csv?raw' {
 interface ImportMetaEnv {
   readonly VITE_JOB_DATA_SOURCE?: 'mock' | 'api'
   readonly VITE_JOBS_API_URL?: string
+  readonly VITE_APPLICATIONS_API_URL?: string
   readonly VITE_AUTH_MODE?: 'disabled' | 'cognito' | 'legacy'
   readonly VITE_COGNITO_DOMAIN?: string
   readonly VITE_COGNITO_CLIENT_ID?: string

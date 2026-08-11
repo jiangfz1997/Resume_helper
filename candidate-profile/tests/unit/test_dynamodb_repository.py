@@ -8,7 +8,9 @@ from candidate_profile.domain.models import (
     CandidateProfileInput,
     CreateApplicationFromJob,
     ExtractedJobInfo,
+    Project,
     UpdateApplicationFields,
+    WorkExperience,
 )
 from candidate_profile.repositories.dynamodb import DynamoDBCandidateProfileRepository
 from candidate_profile.repositories.schema import create_table
@@ -33,6 +35,46 @@ def test_profile_round_trips_and_is_isolated_per_user() -> None:
     assert fetched.summary == "engineer"
     assert repository.get_profile("user-b") is None
     assert saved.user_id == "user-a"
+    assert saved.schema_version == 1
+    assert saved.profile_version == 1
+
+
+@mock_aws
+def test_legacy_empty_profile_remains_readable() -> None:
+    repository = _repository()
+    saved = repository.save_profile("user-a", CandidateProfileInput())
+
+    fetched = repository.get_profile("user-a")
+
+    assert saved.full_name == ""
+    assert fetched is not None
+    assert fetched.full_name == ""
+
+
+@mock_aws
+def test_profile_replace_increments_version_and_preserves_generated_item_ids() -> None:
+    repository = _repository()
+    first = repository.save_profile(
+        "user-a",
+        CandidateProfileInput(
+            full_name="Ada Lovelace",
+            work_experiences=[WorkExperience(company="Acme", title="Engineer")],
+            projects=[Project(name="Engine")],
+        ),
+    )
+
+    replacement = CandidateProfileInput.model_validate(
+        {
+            **first.model_dump(mode="json"),
+            "summary": "Updated profile",
+        }
+    )
+    second = repository.save_profile("user-a", replacement)
+
+    assert second.profile_version == 2
+    assert second.summary == "Updated profile"
+    assert second.work_experiences[0].id == first.work_experiences[0].id
+    assert second.projects[0].id == first.projects[0].id
 
 
 @mock_aws
