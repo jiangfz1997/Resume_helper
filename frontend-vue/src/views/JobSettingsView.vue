@@ -120,7 +120,7 @@ const runs = ref<DashboardRunSummary[]>([])
 const blockedCompanies = ref<string[]>([])
 const unblocking = ref('')
 const scoringRunId = ref<string | null>(null)
-const scoringLimit = ref(20)
+const scoringLimit = ref(50)
 const crawler = ref<DiscoveryCrawler>('all')
 
 const crawlerOptions = [

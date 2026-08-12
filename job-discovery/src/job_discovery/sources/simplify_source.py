@@ -17,7 +17,7 @@ import urllib.error
 from urllib.parse import urlencode, urljoin
 from datetime import datetime, timezone
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Callable
 
 from job_discovery.domain.models import SearchQuery, SourceJobObservation, SourceJobRef, SourceName
 
@@ -32,6 +32,16 @@ _AGE_RE = re.compile(r"^(\d+)d$", re.IGNORECASE)
 _LIST_BUNDLE_RE = re.compile(r'src="([^"]*pages/l/[^"]+\.js[^"]*)"')
 _TYPESENSE_CONFIG_RE = re.compile(
     r'apiKey:"([^"]+)".*?nearestNode:\{host:"([^"]+)"', re.DOTALL
+)
+_CANADA_LOCATION_RE = re.compile(
+    r"(?:"
+    r"\bcanada\b|\bcanadian\b|"
+    r"\b(?:alberta|british columbia|manitoba|new brunswick|newfoundland(?: and labrador)?|"
+    r"nova scotia|ontario|prince edward island|qu[eé]bec|saskatchewan|"
+    r"northwest territories|nunavut|yukon)\b|"
+    r"(?:^|,\s*)(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)(?=\s*(?:,|$))"
+    r")",
+    re.IGNORECASE,
 )
 
 
@@ -235,7 +245,20 @@ class _GitHubTableParser(HTMLParser):
             self._row = None
 
 
-def _parse_github_rows(readme: str, max_results: int) -> list[dict[str, str]]:
+def _is_canada_location(location: str) -> bool:
+    """Require an explicit Canadian country/province marker.
+
+    In particular, bare ``CA`` is California in this feed and bare Remote is
+    worldwide/unspecified, so neither is accepted as Canada.
+    """
+    return _CANADA_LOCATION_RE.search(location) is not None
+
+
+def _parse_github_rows(
+    readme: str,
+    max_results: int,
+    location_predicate: Callable[[str], bool] | None = None,
+) -> list[dict[str, str]]:
     parser = _GitHubTableParser()
     parser.feed(readme)
     results: list[dict[str, str]] = []
@@ -256,14 +279,17 @@ def _parse_github_rows(readme: str, max_results: int) -> list[dict[str, str]]:
         match = _AGE_RE.match(age)
         posted = f"{match.group(1)} days ago" if match else age
         source_job_id = hashlib.sha256(apply_url.encode()).hexdigest()[:32]
-        results.append({
+        row = {
             "source_job_id": source_job_id,
             "company": company,
             "title": title,
             "location": location,
             "apply_url": apply_url,
             "posted": posted,
-        })
+        }
+        if location_predicate is not None and not location_predicate(location):
+            continue
+        results.append(row)
         if len(results) >= max_results:
             break
     return results
@@ -276,7 +302,11 @@ class SimplifyGitHubSource:
         self._rows: dict[str, dict[str, str]] = {}
 
     def search(self, query: SearchQuery) -> list[SourceJobRef]:
-        rows = _parse_github_rows(_request_text(GITHUB_RAW_URL), query.max_results)
+        rows = _parse_github_rows(
+            _request_text(GITHUB_RAW_URL),
+            query.max_results,
+            location_predicate=_is_canada_location,
+        )
         refs: list[SourceJobRef] = []
         for row in rows:
             source_job_id = row["source_job_id"]
