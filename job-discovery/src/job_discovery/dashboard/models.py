@@ -186,7 +186,7 @@ class UpdateJobStateRequest(BaseModel):
 
 class ManualScoringRequest(BaseModel):
     run_id: str = Field(min_length=1, max_length=200)
-    limit: int = Field(default=20, ge=1, le=100)
+    limit: int = Field(default=50, ge=1, le=100)
 
 
 class ManualCrawlerRequest(BaseModel):

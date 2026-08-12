@@ -7,11 +7,15 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from uuid import UUID, uuid4
 
-from job_discovery.dashboard.models import DashboardJobUserStatus, DashboardUserStateSnapshot
+from job_discovery.dashboard.models import DashboardJobUserStatus, DashboardUserStateSnapshot, ManualScoringRequest
 from job_discovery.domain.models import EligibilityStatus
 from job_discovery.domain.settings import ScoringProfileInput, UserScoringProfile
 
 ROOT = Path(__file__).parents[2]
+
+
+def test_manual_scoring_defaults_to_fifty_jobs() -> None:
+    assert ManualScoringRequest(run_id="run-1").limit == 50
 
 
 def _load_lambda() -> ModuleType:

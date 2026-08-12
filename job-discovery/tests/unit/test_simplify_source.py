@@ -11,6 +11,7 @@ from job_discovery.sources import simplify_source as module
 from job_discovery.sources.simplify_source import (
     SimplifyCanadaSource,
     SimplifyGitHubSource,
+    _is_canada_location,
     _parse_github_rows,
 )
 
@@ -83,6 +84,31 @@ def test_github_source_marks_curated_rows_as_new_grad(monkeypatch):
     assert candidate.is_new_grad is True
     assert candidate.new_grad_signals == ["curated:simplify-github"]
     assert candidate.posted_at is not None
+
+
+def test_github_source_only_returns_explicit_canada_locations(monkeypatch):
+    rows = [
+        ("US", "Long Beach, CA Denver, CO"),
+        ("Remote", "Remote"),
+        ("Canada", "Toronto, ON, Canada"),
+        ("Province", "Vancouver, BC"),
+    ]
+    readme = "<table>" + "".join(
+        f'<tr><td>{company}</td><td>Software Engineer I</td><td>{location}</td>'
+        f'<td><a href="https://boards.example/jobs/{company}">Apply</a></td><td>1d</td></tr>'
+        for company, location in rows
+    ) + "</table>"
+    monkeypatch.setattr(module, "_request_text", lambda url, timeout=30: readme)
+
+    source = SimplifyGitHubSource()
+    refs = source.search(SearchQuery(
+        source=SourceName.SIMPLIFY_GITHUB, query="", max_results=10, run_id="run-canada"
+    ))
+    locations = {source.summary(ref)["location"] for ref in refs}
+
+    assert locations == {"Toronto, ON, Canada", "Vancouver, BC"}
+    assert _is_canada_location("Anaheim, CA") is False
+    assert _is_canada_location("Remote") is False
 
 
 def test_metadata_only_curated_merge_keeps_richer_eligibility_and_adds_new_grad_tag():
