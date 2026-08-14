@@ -1,5 +1,6 @@
 import type {
   ApplicationDataSource,
+  ApplicationListQuery,
   ApplicationStatus,
   CreateApplicationFromJob,
   JobApplication,
@@ -35,9 +36,14 @@ interface ApiApplication {
 export class ApiApplicationDataSource implements ApplicationDataSource {
   constructor(private readonly baseUrl: string, private readonly tokenProvider: () => string | null) {}
 
-  async listApplications(status?: ApplicationStatus): Promise<JobApplication[]> {
-    const query = status ? `?status=${encodeURIComponent(status)}` : ''
-    const page = await this.request<{ items: ApiApplication[] }>(`/applications${query}`)
+  async listApplications(query: ApplicationListQuery = {}): Promise<JobApplication[]> {
+    const parameters = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value) parameters.set(key, value)
+    }
+    const encodedParameters = parameters.toString()
+    const queryString = encodedParameters ? `?${encodedParameters}` : ''
+    const page = await this.request<{ items: ApiApplication[] }>(`/applications${queryString}`)
     return page.items.map(toApplication)
   }
 

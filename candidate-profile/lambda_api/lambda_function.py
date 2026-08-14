@@ -9,7 +9,7 @@ import boto3
 from pydantic import ValidationError
 
 from candidate_profile.domain.models import (
-    ApplicationStatus,
+    ApplicationListQuery,
     CandidateProfileInput,
     CreateApplicationFromJob,
     CreateApplicationFromUrl,
@@ -62,9 +62,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return _response(202, application.model_dump(mode="json"))
 
         if route_key == "GET /applications":
-            status_param = (event.get("queryStringParameters") or {}).get("status")
-            status = ApplicationStatus(status_param) if status_param else None
-            applications = repository.list_applications(user_id, status)
+            query = ApplicationListQuery.model_validate(event.get("queryStringParameters") or {})
+            applications = repository.list_applications(user_id, query)
             return _response(200, {"items": [application.model_dump(mode="json") for application in applications]})
 
         if route_key == "GET /applications/{application_id}":
