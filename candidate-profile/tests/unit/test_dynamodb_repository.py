@@ -4,6 +4,7 @@ import boto3
 from moto import mock_aws
 
 from candidate_profile.domain.models import (
+    ApplicationListQuery,
     ApplicationStatus,
     CandidateProfileInput,
     CreateApplicationFromJob,
@@ -111,9 +112,31 @@ def test_status_transition_appends_history_and_shows_up_in_the_list() -> None:
 
     listed = repository.list_applications("user-a")
     assert [item.status for item in listed] == [ApplicationStatus.INTERVIEWING]
-    assert repository.list_applications("user-a", ApplicationStatus.APPLIED) == []
+    assert repository.list_applications("user-a", ApplicationListQuery(status=ApplicationStatus.APPLIED)) == []
 
     assert repository.update_application_status("user-a", "missing", ApplicationStatus.OFFER, None) is None
+
+
+@mock_aws
+def test_application_list_searches_job_and_company_case_insensitively() -> None:
+    repository = _repository()
+    backend = repository.create_application_from_job(
+        "user-a", CreateApplicationFromJob(company="Acme Labs", title="Backend Engineer", jd_text="build APIs")
+    )
+    repository.create_application_from_job(
+        "user-a", CreateApplicationFromJob(company="Northwind", title="Data Analyst", jd_text="analyze data")
+    )
+    repository.create_application_from_job(
+        "user-b", CreateApplicationFromJob(company="Acme Labs", title="Backend Engineer", jd_text="isolated")
+    )
+
+    assert repository.list_applications("user-a", ApplicationListQuery(job="ENGINEER")) == [backend]
+    assert repository.list_applications("user-a", ApplicationListQuery(company="acme")) == [backend]
+    assert repository.list_applications("user-a", ApplicationListQuery(q="backend")) == [backend]
+    assert repository.list_applications("user-a", ApplicationListQuery(q="ACME")) == [backend]
+    assert repository.list_applications(
+        "user-a", ApplicationListQuery(job="engineer", company="northwind")
+    ) == []
 
 
 @mock_aws

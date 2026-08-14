@@ -78,8 +78,15 @@ export interface UpdateApplicationFields {
   notes?: string | null
 }
 
+export interface ApplicationListQuery {
+  status?: ApplicationStatus
+  job?: string
+  company?: string
+  q?: string
+}
+
 export interface ApplicationDataSource {
-  listApplications(status?: ApplicationStatus): Promise<JobApplication[]>
+  listApplications(query?: ApplicationListQuery): Promise<JobApplication[]>
   createFromJob(data: CreateApplicationFromJob): Promise<JobApplication>
   createFromUrl(url: string): Promise<JobApplication>
   updateStatus(applicationId: string, status: ApplicationStatus, note?: string): Promise<JobApplication>

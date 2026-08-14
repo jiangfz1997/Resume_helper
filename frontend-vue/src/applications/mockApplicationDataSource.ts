@@ -1,6 +1,6 @@
 import type {
   ApplicationDataSource,
-  ApplicationStatus,
+  ApplicationListQuery,
   CreateApplicationFromJob,
   JobApplication,
   UpdateApplicationFields,
@@ -9,9 +9,9 @@ import type {
 const STORAGE_KEY = 'candidate-profile:applications:v1'
 
 export class MockApplicationDataSource implements ApplicationDataSource {
-  async listApplications(status?: ApplicationStatus): Promise<JobApplication[]> {
+  async listApplications(query: ApplicationListQuery = {}): Promise<JobApplication[]> {
     const applications = load()
-    const filtered = status ? applications.filter((application) => application.status === status) : applications
+    const filtered = applications.filter((application) => matchesQuery(application, query))
     return [...filtered].sort((left, right) => Date.parse(right.appliedAt) - Date.parse(left.appliedAt))
   }
 
@@ -108,6 +108,18 @@ export class MockApplicationDataSource implements ApplicationDataSource {
   async refreshApplication(applicationId: string): Promise<JobApplication | null> {
     return load().find((application) => application.applicationId === applicationId) ?? null
   }
+}
+
+function matchesQuery(application: JobApplication, query: ApplicationListQuery): boolean {
+  if (query.status && application.status !== query.status) return false
+  if (query.job && !application.title.toLocaleLowerCase().includes(query.job.toLocaleLowerCase())) return false
+  if (query.company && !application.company.toLocaleLowerCase().includes(query.company.toLocaleLowerCase())) return false
+  if (query.q) {
+    const search = query.q.toLocaleLowerCase()
+    if (!application.title.toLocaleLowerCase().includes(search)
+      && !application.company.toLocaleLowerCase().includes(search)) return false
+  }
+  return true
 }
 
 function load(): JobApplication[] {

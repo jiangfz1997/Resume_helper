@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from candidate_profile.domain.models import (
+    ApplicationListQuery,
     ApplicationStatus,
     CandidateProfile,
     CandidateProfileInput,
@@ -29,7 +30,7 @@ class CandidateProfileRepository(Protocol):
 
     def fail_application_extraction(self, user_id: str, application_id: str, error: str) -> None: ...
 
-    def list_applications(self, user_id: str, status: ApplicationStatus | None = None) -> list[JobApplication]: ...
+    def list_applications(self, user_id: str, query: ApplicationListQuery | None = None) -> list[JobApplication]: ...
 
     def get_application(self, user_id: str, application_id: str) -> JobApplication | None: ...
 

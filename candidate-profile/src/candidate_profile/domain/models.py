@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContactInfo(BaseModel):
@@ -101,6 +101,15 @@ class ApplicationStatusEvent(BaseModel):
     status: ApplicationStatus
     note: str | None = None
     changed_at: datetime
+
+
+class ApplicationListQuery(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    status: ApplicationStatus | None = None
+    job: str | None = Field(default=None, min_length=1, max_length=200)
+    company: str | None = Field(default=None, min_length=1, max_length=200)
+    q: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class CreateApplicationFromJob(BaseModel):

@@ -8,8 +8,8 @@ the job-discovery crawl/score domain, so the two must be able to evolve and
 redeploy independently.
 
 Single-item reads use ConsistentRead=True; the application list is
-eventually consistent and filters by status in Python, which is fine at
-personal-tracker volume (tens to low hundreds of applications).
+eventually consistent and applies status and text filters in Python, which
+is fine at personal-tracker volume (tens to low hundreds of applications).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 from candidate_profile.domain.models import (
+    ApplicationListQuery,
     ApplicationSourceType,
     ApplicationStatus,
     ApplicationStatusEvent,
@@ -71,6 +72,20 @@ _LIST_PROJECTION = ", ".join(_LIST_PROJECTION_NAMES)
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _matches_application(application: JobApplication, query: ApplicationListQuery) -> bool:
+    if query.status is not None and application.status is not query.status:
+        return False
+    if query.job is not None and query.job.casefold() not in application.title.casefold():
+        return False
+    if query.company is not None and query.company.casefold() not in application.company.casefold():
+        return False
+    if query.q is not None:
+        search = query.q.casefold()
+        if search not in application.title.casefold() and search not in application.company.casefold():
+            return False
+    return True
 
 
 def _paginated(operation: Any, **kwargs: Any) -> list[dict[str, Any]]:
@@ -232,7 +247,7 @@ class DynamoDBCandidateProfileRepository:
             },
         )
 
-    def list_applications(self, user_id: str, status: ApplicationStatus | None = None) -> list[JobApplication]:
+    def list_applications(self, user_id: str, query: ApplicationListQuery | None = None) -> list[JobApplication]:
         items = _paginated(
             self._table.query,
             KeyConditionExpression=Key("user_id").eq(user_id) & Key("entity_key").begins_with("APPLICATION#"),
@@ -240,8 +255,8 @@ class DynamoDBCandidateProfileRepository:
             ExpressionAttributeNames=_LIST_PROJECTION_NAMES,
         )
         applications = [_to_application(item) for item in items]
-        if status is not None:
-            applications = [application for application in applications if application.status is status]
+        if query is not None:
+            applications = [application for application in applications if _matches_application(application, query)]
         applications.sort(key=lambda application: application.applied_at, reverse=True)
         return applications
 

@@ -27,7 +27,20 @@
     </section>
 
     <section class="toolbar">
-      <n-select v-model:value="statusFilter" :options="statusFilterOptions" style="width: 220px" />
+      <div class="toolbar-filters">
+        <n-input-group>
+          <n-input
+            v-model:value="searchText"
+            clearable
+            placeholder="Search job title or company"
+            style="width: 320px"
+            @clear="clearSearch"
+            @keydown.enter="load"
+          />
+          <n-button :loading="loading" @click="load">Search</n-button>
+        </n-input-group>
+        <n-select v-model:value="statusFilter" :options="statusFilterOptions" style="width: 220px" />
+      </div>
       <n-button type="primary" @click="showAddDialog = true">+ Add application</n-button>
     </section>
 
@@ -42,7 +55,7 @@
     />
     <div v-else class="loading"><n-spin size="large" /></div>
 
-    <n-empty v-if="!loading && !visibleApplications.length" description="No applications match this filter" style="margin-top: 24px" />
+    <n-empty v-if="!loading && !visibleApplications.length" description="No applications match your search and filters" style="margin-top: 24px" />
 
     <n-modal v-model:show="showAddDialog" preset="card" title="Add application from a link" style="max-width: 480px">
       <n-form :model="addForm">
@@ -122,6 +135,7 @@ const message = useMessage()
 const applications = ref<JobApplication[]>([])
 const loading = ref(true)
 const loadError = ref('')
+const searchText = ref('')
 const statusFilter = ref<'all' | ApplicationStatus>('all')
 const showAddDialog = ref(false)
 const addLoading = ref(false)
@@ -188,12 +202,18 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    applications.value = await applicationDataSource.listApplications()
+    const q = searchText.value.trim()
+    applications.value = await applicationDataSource.listApplications(q ? { q } : undefined)
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : 'Unable to load applications.'
   } finally {
     loading.value = false
   }
+}
+
+function clearSearch(): void {
+  searchText.value = ''
+  void load()
 }
 
 function openDetail(applicationId: string): void {
@@ -292,7 +312,8 @@ function formatDate(value: string): string {
 .stat-value { font-size: 26px; font-weight: 700; }
 .status-breakdown .status-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .muted { color: #666; font-size: 12px; }
-.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.toolbar-filters { display: flex; align-items: center; gap: 12px; }
 .loading { display: grid; place-items: center; height: 240px; }
 .hint { color: #888; font-size: 12px; margin-top: 4px; }
 .eyebrow { display: block; margin-bottom: 6px; color: #6fa8ff; font: 700 10px/1.3 monospace; letter-spacing: .12em; }
@@ -300,4 +321,8 @@ function formatDate(value: string): string {
 .history { margin: 0; padding-left: 18px; font-size: 12px; color: #ccc; }
 .history li { margin-bottom: 4px; }
 :deep(.row-link) { color: #6fa8ff; cursor: pointer; }
+@media (max-width: 760px) {
+  .toolbar, .toolbar-filters { align-items: stretch; flex-direction: column; }
+  .toolbar :deep(.n-input-group), .toolbar :deep(.n-input), .toolbar :deep(.n-select) { width: 100% !important; }
+}
 </style>
