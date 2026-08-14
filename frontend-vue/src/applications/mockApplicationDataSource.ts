@@ -1,6 +1,7 @@
 import type {
   ApplicationDataSource,
   ApplicationListQuery,
+  ApplicationStatus,
   CreateApplicationFromJob,
   JobApplication,
   UpdateApplicationFields,
