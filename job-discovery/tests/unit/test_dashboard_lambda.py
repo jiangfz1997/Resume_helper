@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from job_discovery.dashboard.models import DashboardJobUserStatus, DashboardUserStateSnapshot, ManualScoringRequest
 from job_discovery.domain.models import EligibilityStatus
-from job_discovery.domain.settings import ScoringProfileInput, UserScoringProfile
+from job_discovery.domain.settings import DiscoverySettings, ScoringProfileInput, UserScoringProfile
 
 ROOT = Path(__file__).parents[2]
 
@@ -162,13 +162,16 @@ def test_authenticated_user_can_queue_one_job_for_scoring(monkeypatch) -> None:
 
     class FakeReader:
         def get_record(self, job_id: UUID) -> object:
-            return object()
+            return SimpleNamespace(required_years_min=None, required_years_max=None)
 
     class FakeLambdaClient:
         def invoke(self, **kwargs: object) -> None:
             invocations.append(kwargs)
 
     class FakeStateRepository:
+        def get_discovery_settings(self) -> DiscoverySettings:
+            return DiscoverySettings(max_required_years=5)
+
         def get_scoring_profile(self, user_id: str) -> UserScoringProfile:
             return UserScoringProfile(
                 user_id=user_id, skills=["Python"], active=True, profile_version=3,
@@ -198,6 +201,31 @@ def test_authenticated_user_can_queue_one_job_for_scoring(monkeypatch) -> None:
     assert payload == {"user_ids": ["user-1"], "job_ids": [job_id], "limit": 1}
 
 
+def test_job_above_experience_cap_cannot_be_queued_manually(monkeypatch) -> None:
+    class FakeReader:
+        def get_record(self, job_id: UUID) -> object:
+            return SimpleNamespace(required_years_min=5, required_years_max=8)
+
+    class FakeStateRepository:
+        def get_discovery_settings(self) -> DiscoverySettings:
+            return DiscoverySettings(max_required_years=5)
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    module = _load_lambda()
+    module._reader = FakeReader()
+    module._state_repository = FakeStateRepository()
+    event = {
+        "routeKey": "POST /jobs/{job_id}/score",
+        "pathParameters": {"job_id": "6e02c6de-1547-4efd-b54a-b531058d9d87"},
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
+    }
+
+    response = module.lambda_handler(event, None)
+
+    assert response["statusCode"] == 409
+    assert "5-year scoring limit" in json.loads(response["body"])["detail"]
+
+
 def test_manual_run_scoring_caps_at_unscored_eligible_jobs(monkeypatch) -> None:
     invocations: list[dict] = []
     queued: list[UUID] = []
@@ -209,6 +237,9 @@ def test_manual_run_scoring_caps_at_unscored_eligible_jobs(monkeypatch) -> None:
             first_discovered_run_id=run_id,
             eligibility_status=EligibilityStatus.ELIGIBLE,
             created_at=datetime(2026, 8, 9, 12, index, tzinfo=timezone.utc),
+            required_years_min=None,
+            required_years_max=None,
+            is_new_grad=False,
         )
         for index, job_id in enumerate(job_ids)
     ]
@@ -222,6 +253,9 @@ def test_manual_run_scoring_caps_at_unscored_eligible_jobs(monkeypatch) -> None:
             invocations.append(kwargs)
 
     class FakeStateRepository:
+        def get_discovery_settings(self) -> DiscoverySettings:
+            return DiscoverySettings(max_required_years=5)
+
         def get_scoring_profile(self, user_id: str) -> UserScoringProfile:
             return UserScoringProfile(
                 user_id=user_id, skills=["Python"], active=True, profile_version=3,
@@ -262,10 +296,70 @@ def test_manual_run_scoring_caps_at_unscored_eligible_jobs(monkeypatch) -> None:
     payload = json.loads(invocations[0]["Payload"].decode("utf-8"))
 
     assert response["statusCode"] == 202
-    assert body == {"ok": True, "run_id": run_id, "eligible": 4, "remaining": 2, "queued": 2}
+    assert body == {
+        "ok": True,
+        "run_id": run_id,
+        "eligible": 4,
+        "remaining": 2,
+        "queued": 2,
+        "seniority_skipped": 0,
+    }
     assert set(queued) == set(job_ids[2:])
     assert set(payload["job_ids"]) == {str(job_id) for job_id in job_ids[2:]}
     assert payload["limit"] == 2
+
+
+def test_manual_run_scoring_reports_when_all_jobs_exceed_experience_cap(monkeypatch) -> None:
+    run_id = "lambda-2026-08-09T12:00Z"
+    record = SimpleNamespace(
+        job_id=uuid4(),
+        first_discovered_run_id=run_id,
+        eligibility_status=EligibilityStatus.ELIGIBLE,
+        created_at=datetime(2026, 8, 9, 12, 0, tzinfo=timezone.utc),
+        required_years_min=5,
+        required_years_max=8,
+        is_new_grad=False,
+    )
+
+    class FakeReader:
+        def list_records(self) -> list:
+            return [record]
+
+    class FakeStateRepository:
+        def get_discovery_settings(self) -> DiscoverySettings:
+            return DiscoverySettings(max_required_years=5)
+
+        def get_scoring_profile(self, user_id: str) -> UserScoringProfile:
+            return UserScoringProfile(
+                user_id=user_id, skills=["Python"], active=True, profile_version=3,
+                updated_at=datetime.now(timezone.utc),
+            )
+
+        def get_snapshot(self, user_id: str) -> DashboardUserStateSnapshot:
+            return DashboardUserStateSnapshot()
+
+    monkeypatch.setenv("REQUIRE_AUTH", "true")
+    module = _load_lambda()
+    module._reader = FakeReader()
+    module._state_repository = FakeStateRepository()
+    event = {
+        "routeKey": "POST /actions/scoring",
+        "body": json.dumps({"run_id": run_id, "limit": 100}),
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "user-1"}}}},
+    }
+
+    response = module.lambda_handler(event, None)
+    body = json.loads(response["body"])
+
+    assert response["statusCode"] == 202
+    assert body == {
+        "ok": True,
+        "run_id": run_id,
+        "eligible": 0,
+        "remaining": 0,
+        "queued": 0,
+        "seniority_skipped": 1,
+    }
 
 
 def test_manual_crawler_invokes_selected_functions_with_one_run_id(monkeypatch) -> None:

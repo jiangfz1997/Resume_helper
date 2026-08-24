@@ -23,6 +23,7 @@ from job_discovery.dashboard.models import (
 )
 from job_discovery.domain.models import EligibilityStatus, JobRecord, JobSourceListing, ListingStatus
 from job_discovery.domain.normalize import normalize_company
+from job_discovery.domain.scoring_policy import is_scoreable_by_years
 
 
 def list_dashboard_jobs(
@@ -116,6 +117,7 @@ def get_scoring_queue(
     states: list[DashboardJobUserState],
     profile_version: int | None,
     blocked_companies: Collection[str] = (),
+    max_required_years: int | None = None,
 ) -> DashboardScoringQueue:
     blocked = _normalized_blocklist(blocked_companies)
     listings_by_job: dict[UUID, list[JobSourceListing]] = defaultdict(list)
@@ -137,10 +139,15 @@ def get_scoring_queue(
         state.job_id for state in states
         if state.status in {DashboardJobUserStatus.APPLIED, DashboardJobUserStatus.REJECTED}
     }
-    eligible = [
+    all_eligible = [
         record for record in reader.list_records()
         if record.eligibility_status is EligibilityStatus.ELIGIBLE and not _is_blocked(record, blocked)
     ]
+    seniority_skipped = {
+        record.job_id for record in all_eligible
+        if not is_scoreable_by_years(record, max_required_years)
+    }
+    eligible = [record for record in all_eligible if record.job_id not in seniority_skipped]
     archived = {
         record.job_id for record in eligible
         if _lifecycle_status(record, listings_by_job.get(record.job_id, [])) is JobLifecycleStatus.ARCHIVED
@@ -154,6 +161,7 @@ def get_scoring_queue(
         queued=len(unscored & queued),
         failed=len(unscored & failed),
         archived_skipped=len(archived),
+        seniority_skipped=len(seniority_skipped),
     )
 
 
@@ -168,6 +176,7 @@ def get_dashboard_bootstrap(
     table rather than one per concurrent request."""
     snapshot = state_repository.get_snapshot(user_id)
     profile = state_repository.get_scoring_profile(user_id)
+    settings = state_repository.get_discovery_settings()
     blocked_companies = state_repository.list_blocked_companies(user_id)
     return DashboardBootstrap(
         jobs=list_dashboard_jobs(reader, query, blocked_companies),
@@ -175,7 +184,8 @@ def get_dashboard_bootstrap(
         user_state=snapshot,
         scoring_profile=profile,
         scoring_queue=get_scoring_queue(
-            reader, snapshot.jobs, profile.profile_version if profile else None, blocked_companies
+            reader, snapshot.jobs, profile.profile_version if profile else None, blocked_companies,
+            settings.max_required_years,
         ),
         blocked_companies=blocked_companies,
     )

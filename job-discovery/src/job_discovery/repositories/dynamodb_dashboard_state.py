@@ -298,6 +298,11 @@ def _to_profile(item: dict[str, Any]) -> UserScoringProfile:
 
 def _to_discovery_settings(item: dict[str, Any]) -> DiscoverySettings:
     payload = {field: item[field] for field in DiscoverySettingsInput.model_fields if field in item}
+    # Older settings rows stored null for "no limit". Scoring now has a
+    # mandatory early-career ceiling, so normalize those rows to the current
+    # default without requiring a destructive migration just to read them.
+    if payload.get("max_required_years") is None:
+        payload.pop("max_required_years", None)
     return DiscoverySettings(
         **payload, config_version=int(item.get("config_version", 1)),
         updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,

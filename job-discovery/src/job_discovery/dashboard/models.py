@@ -131,6 +131,7 @@ class DashboardScoringQueue(BaseModel):
     queued: int
     failed: int
     archived_skipped: int
+    seniority_skipped: int = 0
 
 
 class DashboardRunPage(BaseModel):

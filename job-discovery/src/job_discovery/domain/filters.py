@@ -148,8 +148,13 @@ def _years_verdict(candidate: NormalizedJobCandidate, config: FilterConfig) -> F
     if config.max_required_years is None:
         return None
 
-    if candidate.required_years_min is not None:
-        return FilterCode.YEARS_TOO_HIGH if candidate.required_years_min > config.max_required_years else None
+    required_years = (
+        candidate.required_years_max
+        if candidate.required_years_max is not None
+        else candidate.required_years_min
+    )
+    if required_years is not None:
+        return FilterCode.YEARS_TOO_HIGH if required_years > config.max_required_years else None
 
     if candidate.is_new_grad:
         return None

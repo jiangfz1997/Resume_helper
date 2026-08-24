@@ -68,6 +68,13 @@ def _effective_eligibility(
     codes = list(eligibility.codes)
     if candidate.description is None and job.description is not None:
         codes = [code for code in codes if code not in {FilterCode.DESCRIPTION_MISSING, FilterCode.DESCRIPTION_TOO_SHORT}]
+        for code in job.filter_codes:
+            if code in {FilterCode.YEARS_TOO_HIGH, FilterCode.YEARS_UNPARSED} and code not in codes:
+                codes.append(code)
+        if FilterCode.YEARS_TOO_HIGH in codes:
+            return EligibilityStatus.EXCLUDED, codes
+        if FilterCode.YEARS_UNPARSED in codes:
+            return EligibilityStatus.REVIEW, codes
         if eligibility.status is EligibilityStatus.REVIEW and not codes:
             return EligibilityStatus.ELIGIBLE, codes
     return eligibility.status, codes
@@ -489,6 +496,15 @@ class DynamoDBJobRepository(JobRepository):
             job.description_chars = candidate.description_chars
             job.description_hash = candidate.description_hash
             changed = True
+        if candidate.description is not None:
+            years_fields = (
+                candidate.required_years_min,
+                candidate.required_years_max,
+                candidate.years_mentioned,
+            )
+            if years_fields != (job.required_years_min, job.required_years_max, job.years_mentioned):
+                job.required_years_min, job.required_years_max, job.years_mentioned = years_fields
+                changed = True
         eligibility_status, eligibility_codes = _effective_eligibility(job, candidate, eligibility)
         if eligibility_status != job.eligibility_status or eligibility_codes != job.filter_codes:
             job.eligibility_status = eligibility_status

@@ -178,6 +178,30 @@ def test_updated_description_refreshes_record(repository) -> None:
     assert record.description_chars == len("a longer description now")
 
 
+def test_updated_description_refreshes_extracted_years(repository) -> None:
+    result = ingest_observation(
+        _observation(
+            SourceName.WORKDAY, "R_years", None, datetime(2026, 8, 5, 9, 0),
+            description="Requires 8 years of professional experience.",
+        ),
+        repository,
+        FilterConfig(filter_version="v1", min_description_chars=0, max_required_years=5),
+    )
+    ingest_observation(
+        _observation(
+            SourceName.WORKDAY, "R_years", None, datetime(2026, 8, 5, 21, 0),
+            description="Requires 3 years of professional experience.",
+        ),
+        repository,
+        FilterConfig(filter_version="v2", min_description_chars=0, max_required_years=5),
+    )
+
+    record = repository.get_record(result.job_id)
+    assert record is not None
+    assert (record.required_years_min, record.required_years_max) == (3, None)
+    assert record.eligibility_status.value == "eligible"
+
+
 def test_no_change_reports_unchanged(repository) -> None:
     obs = _observation(SourceName.WORKDAY, "R_1", None, datetime(2026, 8, 5, 9, 0), description="same text")
     ingest_observation(obs, repository, CONFIG)

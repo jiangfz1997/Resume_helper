@@ -48,7 +48,7 @@
             <n-form-item label="JobSpy location"><n-input v-model:value="discovery.jobspyLocation" /></n-form-item>
             <n-form-item label="Posted within (hours)"><n-input-number v-model:value="discovery.hoursOld" :min="1" :max="168" /></n-form-item>
             <n-form-item label="Minimum JD characters"><n-input-number v-model:value="discovery.minDescriptionChars" :min="0" :max="10000" /></n-form-item>
-            <n-form-item label="Max years a posting may require"><n-input-number v-model:value="discovery.maxRequiredYears" :min="0" :max="20" clearable placeholder="No limit" /></n-form-item>
+            <n-form-item label="Max years a posting may require"><n-input-number v-model:value="discovery.maxRequiredYears" :min="0" :max="20" /></n-form-item>
           </div>
           <div class="three-column">
             <n-form-item label="JobSpy results / query"><n-input-number v-model:value="discovery.jobspyMaxResults" :min="1" :max="100" /></n-form-item>
@@ -233,7 +233,7 @@ async function runCrawler(): Promise<void> {
 function splitList(value: string): string[] { return [...new Set(value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean))] }
 function formatDate(value: string | null): string { return value ? new Intl.DateTimeFormat('en-CA', { dateStyle: 'medium', timeStyle: 'short' }).format(Date.parse(value)) : '' }
 function emptyProfile(): ScoringProfileSettings { return { skills: [], targetTitles: [], minYearsExperience: null, locationPreference: '', prefersNewGrad: false, active: true, profileVersion: null, updatedAt: null } }
-function emptyDiscovery(): DiscoverySettings { return { searchTerms: [], jobspyLocation: 'Canada', hoursOld: 24, jobspyMaxResults: 15, workdayMaxResults: 10, sites: ['indeed', 'linkedin'], acceptedLocations: [], includeTitleKeywords: [], excludeTitleKeywords: [], reviewTitleKeywords: [], minDescriptionChars: 300, maxRequiredYears: null, configVersion: null, updatedAt: null } }
+function emptyDiscovery(): DiscoverySettings { return { searchTerms: [], jobspyLocation: 'Canada', hoursOld: 24, jobspyMaxResults: 15, workdayMaxResults: 10, sites: ['indeed', 'linkedin'], acceptedLocations: [], includeTitleKeywords: [], excludeTitleKeywords: [], reviewTitleKeywords: [], minDescriptionChars: 300, maxRequiredYears: 5, configVersion: null, updatedAt: null } }
 </script>
 
 <style scoped>

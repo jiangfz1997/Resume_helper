@@ -84,7 +84,7 @@ interface ApiRunPage {
 
 interface ApiScoringQueue {
   eligible_total: number; scored_current: number; pending: number
-  queued: number; failed: number; archived_skipped: number
+  queued: number; failed: number; archived_skipped: number; seniority_skipped?: number
 }
 
 interface ApiBootstrap {
@@ -132,7 +132,7 @@ export class ApiJobDataSource implements JobDataSource {
         runs,
         userState: { jobs: [], runs: [] },
         scoringProfile: emptyScoringProfile(),
-        scoringQueue: { eligibleTotal: 0, scoredCurrent: 0, pending: 0, queued: 0, failed: 0, archivedSkipped: 0 },
+        scoringQueue: { eligibleTotal: 0, scoredCurrent: 0, pending: 0, queued: 0, failed: 0, archivedSkipped: 0, senioritySkipped: 0 },
         blockedCompanies: [],
       }
     }
@@ -364,7 +364,7 @@ function toDiscoverySettings(settings: ApiDiscoverySettings): DiscoverySettings 
     sites: settings.sites, acceptedLocations: settings.accepted_locations,
     includeTitleKeywords: settings.include_title_keywords, excludeTitleKeywords: settings.exclude_title_keywords,
     reviewTitleKeywords: settings.review_title_keywords, minDescriptionChars: settings.min_description_chars,
-    maxRequiredYears: settings.max_required_years ?? null,
+    maxRequiredYears: settings.max_required_years ?? 5,
     configVersion: settings.config_version, updatedAt: settings.updated_at,
   }
 }
@@ -398,6 +398,7 @@ function toScoringQueue(queue: ApiScoringQueue): ScoringQueueSummary {
     queued: queue.queued,
     failed: queue.failed,
     archivedSkipped: queue.archived_skipped,
+    senioritySkipped: queue.seniority_skipped ?? 0,
   }
 }
 

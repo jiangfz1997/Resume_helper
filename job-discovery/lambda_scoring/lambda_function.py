@@ -27,6 +27,7 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
         return {"repository_backend": repository_backend, "active_profiles": 0, "scored": 0, "errors": 0}
 
     scorer = GeminiCoarseScorer()
+    max_required_years = user_data.get_discovery_settings().max_required_years
     scored, errors = score_jobs_for_users(
         repository,
         user_data,
@@ -36,11 +37,13 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
         user_ids=set(event["user_ids"]) if event.get("user_ids") else None,
         job_ids={UUID(value) for value in event["job_ids"]} if event.get("job_ids") else None,
         max_age_days=int(event["max_age_days"]) if event.get("max_age_days") is not None else None,
+        max_required_years=max_required_years,
     )
     response = {
         "repository_backend": repository_backend,
         "active_profiles": len(profiles),
         "max_age_days": event.get("max_age_days"),
+        "max_required_years": max_required_years,
         "scored": scored,
         "errors": errors,
     }

@@ -88,6 +88,7 @@ export interface ScoringQueueSummary {
   queued: number
   failed: number
   archivedSkipped: number
+  senioritySkipped: number
 }
 
 export interface JobUserState {

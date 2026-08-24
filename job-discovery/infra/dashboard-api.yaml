@@ -431,7 +431,7 @@ Resources:
           Properties:
             ScheduleExpression: cron(45 10 * * ? *)
             ScheduleExpressionTimezone: America/Toronto
-            Input: '{"limit":30,"max_age_days":2}'
+            Input: '{"limit":30,"max_age_days":7}'
 
 Outputs:
   ApiUrl:

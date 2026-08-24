@@ -17,7 +17,7 @@ from job_discovery.dashboard.service import (
     list_dashboard_jobs,
     list_dashboard_runs,
 )
-from job_discovery.domain.settings import UserScoringProfile
+from job_discovery.domain.settings import DiscoverySettings, UserScoringProfile
 from job_discovery.repositories.dashboard_cache import CachingDashboardJobReader
 from job_discovery.domain.models import (
     EligibilityStatus,
@@ -219,6 +219,24 @@ def test_archived_jobs_are_excluded_from_scoring_queue() -> None:
     assert queue.archived_skipped == 1
 
 
+def test_scoring_queue_excludes_jobs_above_experience_cap() -> None:
+    early = _record("Junior Backend Engineer", None)
+    early.required_years_min = 3
+    senior = _record("Backend Engineer", None)
+    senior.required_years_min = 5
+    senior.required_years_max = 8
+    reader = FakeDashboardReader(
+        [early, senior],
+        [_listing(early, SourceName.INDEED), _listing(senior, SourceName.WORKDAY)],
+    )
+
+    queue = get_scoring_queue(reader, [], profile_version=1, max_required_years=5)
+
+    assert queue.eligible_total == 1
+    assert queue.pending == 1
+    assert queue.seniority_skipped == 1
+
+
 def test_blocked_company_leaves_the_list_and_the_scoring_queue() -> None:
     blocked = _record("Backend Engineer", None)
     blocked.canonical_company = "Jobright.ai"
@@ -278,6 +296,9 @@ class CountingStateRepository:
 
     def list_discovery_runs(self) -> list[DiscoveryRunReport]:
         return self.reports
+
+    def get_discovery_settings(self) -> DiscoverySettings:
+        return DiscoverySettings(max_required_years=5)
 
 
 def _bootstrap_fixtures() -> tuple[FakeDashboardReader, CountingStateRepository]:

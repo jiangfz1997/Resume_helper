@@ -25,6 +25,19 @@ class ProfileAwareScorer:
         )
 
 
+class RecordingScorer:
+    def __init__(self) -> None:
+        self.jobs: list[JobRecord] = []
+
+    def score(self, job: JobRecord, profile: ScoringProfile) -> CoarseScore:
+        del profile
+        self.jobs.append(job)
+        return CoarseScore(
+            score=7, reasoning="recorded", model="fake",
+            scored_at=datetime.now(timezone.utc),
+        )
+
+
 @mock_aws
 def test_existing_score_for_one_user_does_not_skip_a_second_user() -> None:
     resource = boto3.resource("dynamodb", region_name="us-east-1")
@@ -157,3 +170,80 @@ def test_max_age_days_keeps_the_daily_run_off_the_backlog() -> None:
     assert {state.job_id for state in user_data.get_snapshot("user-a").jobs} == {
         ingested[0].job_id, ingested[1].job_id
     }
+
+
+@mock_aws
+def test_scheduled_scoring_skips_a_range_above_the_years_cap() -> None:
+    resource = boto3.resource("dynamodb", region_name="us-east-1")
+    resource.create_table(
+        TableName="user-data", BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "entity_key", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "entity_key", "KeyType": "RANGE"},
+        ],
+    )
+    user_data = DynamoDBDashboardUserStateRepository("user-data", resource=resource)
+    jobs = InMemoryJobRepository()
+    for index, description in enumerate([
+        "Requires 5-8 years of professional experience. " + "x" * 400,
+        "Requires 3 years of professional experience. " + "y" * 400,
+    ]):
+        ingest_observation(
+            SourceJobObservation(
+                source=SourceName.WORKDAY, source_job_id=f"R_cap_{index}",
+                source_url=f"https://example.com/R_cap_{index}", title_raw="Software Engineer",
+                company_raw=f"Company {index}", location_raw="Toronto", description_raw=description,
+                observed_at=datetime.now(timezone.utc), run_id="run-cap",
+            ),
+            jobs,
+            FilterConfig(filter_version="v1", min_description_chars=0),
+        )
+    user_data.save_scoring_profile("user-a", ScoringProfileInput(skills=["Python"]))
+    scorer = RecordingScorer()
+
+    assert score_jobs_for_users(
+        jobs, user_data, scorer, "prompt-v1", max_required_years=5
+    ) == (1, 0)
+    assert [(job.required_years_min, job.required_years_max) for job in scorer.jobs] == [(3, None)]
+
+
+@mock_aws
+def test_limit_prioritizes_three_year_role_over_older_five_year_role() -> None:
+    resource = boto3.resource("dynamodb", region_name="us-east-1")
+    resource.create_table(
+        TableName="user-data", BillingMode="PAY_PER_REQUEST",
+        AttributeDefinitions=[
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "entity_key", "AttributeType": "S"},
+        ],
+        KeySchema=[
+            {"AttributeName": "user_id", "KeyType": "HASH"},
+            {"AttributeName": "entity_key", "KeyType": "RANGE"},
+        ],
+    )
+    user_data = DynamoDBDashboardUserStateRepository("user-data", resource=resource)
+    jobs = InMemoryJobRepository()
+    now = datetime.now(timezone.utc)
+    for index, (years, observed_at) in enumerate([(5, now - timedelta(hours=4)), (3, now)]):
+        ingest_observation(
+            SourceJobObservation(
+                source=SourceName.WORKDAY, source_job_id=f"R_priority_{index}",
+                source_url=f"https://example.com/R_priority_{index}", title_raw="Software Engineer",
+                company_raw=f"Priority Company {index}", location_raw="Toronto",
+                description_raw=f"Requires {years} years of professional experience. " + "z" * 400,
+                observed_at=observed_at, run_id="run-priority",
+            ),
+            jobs,
+            FilterConfig(filter_version="v1", min_description_chars=0),
+        )
+    user_data.save_scoring_profile("user-a", ScoringProfileInput(skills=["Python"]))
+    scorer = RecordingScorer()
+
+    assert score_jobs_for_users(
+        jobs, user_data, scorer, "prompt-v1", limit=1, max_required_years=5
+    ) == (1, 0)
+    assert scorer.jobs[0].required_years_min == 3

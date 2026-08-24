@@ -7,7 +7,7 @@
         <p>Review discovered roles, understand their coarse score, and build a focused shortlist.</p>
       </div>
       <div class="snapshot"><i /><div>
-        <template v-if="auth.isAuthenticated"><b>{{ pendingCount }} pending · {{ unreadRunCount }} unread runs</b><small>{{ scoringQueue.scoredCurrent }} scored · {{ scoringQueue.pending }} waiting · {{ scoringQueue.queued }} queued · {{ scoringQueue.failed }} failed · {{ unviewedCount }} unopened</small></template>
+        <template v-if="auth.isAuthenticated"><b>{{ pendingCount }} pending · {{ unreadRunCount }} unread runs</b><small>{{ scoringQueue.scoredCurrent }} scored · {{ scoringQueue.pending }} waiting · {{ scoringQueue.queued }} queued · {{ scoringQueue.failed }} failed<span v-if="scoringQueue.senioritySkipped"> · {{ scoringQueue.senioritySkipped }} over experience cap</span> · {{ unviewedCount }} unopened</small></template>
         <template v-else><b>{{ jobs.length }} public roles</b><small>Read-only portfolio view</small></template>
       </div></div>
     </header>
@@ -205,7 +205,7 @@ const detailLoading = ref(false)
 const selectedJobId = ref<string | null>(null)
 const selectedJob = ref<DashboardJob | null>(null)
 const currentProfileVersion = ref<number | null>(null)
-const scoringQueue = ref<ScoringQueueSummary>({ eligibleTotal: 0, scoredCurrent: 0, pending: 0, queued: 0, failed: 0, archivedSkipped: 0 })
+const scoringQueue = ref<ScoringQueueSummary>({ eligibleTotal: 0, scoredCurrent: 0, pending: 0, queued: 0, failed: 0, archivedSkipped: 0, senioritySkipped: 0 })
 const queuedJobIds = ref(new Set<string>())
 const blockedCompanies = ref(new Set<string>())
 const search = ref('')

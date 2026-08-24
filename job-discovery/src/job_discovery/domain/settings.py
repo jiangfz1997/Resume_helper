@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from job_discovery.domain.filters import DEFAULT_INCLUDE_TITLE_KEYWORDS
 from job_discovery.domain.models import ScoringProfile
 
+DEFAULT_MAX_REQUIRED_YEARS = 5
+
 
 class DiscoverySettingsInput(BaseModel):
     search_terms: list[str] = Field(
@@ -27,7 +29,7 @@ class DiscoverySettingsInput(BaseModel):
     # Upper bound on the years a posting may demand. Unrelated to
     # years.MAX_PLAUSIBLE_YEARS, which is an extraction noise guard -- setting
     # this low is a search preference, setting that low would break extraction.
-    max_required_years: int | None = Field(default=None, ge=0, le=20)
+    max_required_years: int | None = Field(default=DEFAULT_MAX_REQUIRED_YEARS, ge=0, le=20)
 
 
 class DiscoverySettings(DiscoverySettingsInput):

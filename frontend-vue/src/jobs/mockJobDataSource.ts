@@ -172,6 +172,7 @@ export class MockJobDataSource implements JobDataSource {
       queued: 0,
       failed: 0,
       archivedSkipped: 0,
+      senioritySkipped: 0,
     }
   }
 
@@ -348,7 +349,7 @@ function defaultMockDiscovery(): DiscoverySettings {
     jobspyMaxResults: 15, workdayMaxResults: 10, sites: ['indeed', 'linkedin'], acceptedLocations: [],
     includeTitleKeywords: ['software engineer', 'software developer', 'backend', 'frontend', 'full stack', 'developer', 'sde', 'swe', 'qa engineer', 'quality assurance', 'qa analyst', 'sdet', 'test engineer', 'test automation', 'automation engineer'],
     excludeTitleKeywords: ['staff', 'principal', 'director', 'vp', 'vice president', 'head of'],
-    reviewTitleKeywords: ['senior', 'sr.', 'lead'], minDescriptionChars: 300, maxRequiredYears: null,
+    reviewTitleKeywords: ['senior', 'sr.', 'lead'], minDescriptionChars: 300, maxRequiredYears: 5,
     configVersion: null, updatedAt: null,
   }
 }

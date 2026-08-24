@@ -28,6 +28,7 @@ from job_discovery.dashboard.service import (
     list_dashboard_runs,
 )
 from job_discovery.domain.models import EligibilityStatus
+from job_discovery.domain.scoring_policy import is_scoreable_by_years, scoring_priority
 from job_discovery.domain.settings import DiscoverySettingsInput, ScoringProfileInput
 from job_discovery.repositories.dashboard_cache import CachingDashboardJobReader
 from job_discovery.repositories.dynamodb_dashboard import DynamoDBDashboardJobReader
@@ -118,12 +119,17 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 state.jobs,
                 profile.profile_version if profile else None,
                 _get_state_repository().list_blocked_companies(user_id),
+                _get_state_repository().get_discovery_settings().max_required_years,
             )
             return _response(200, queue.model_dump(mode="json"))
         if route_key == "POST /jobs/{job_id}/score":
             job_id = UUID((event.get("pathParameters") or {}).get("job_id", ""))
-            if _get_reader().get_record(job_id) is None:
+            record = _get_reader().get_record(job_id)
+            if record is None:
                 return _response(404, {"detail": "job not found"})
+            max_years = _get_state_repository().get_discovery_settings().max_required_years
+            if not is_scoreable_by_years(record, max_years):
+                return _response(409, {"detail": f"job exceeds the {max_years}-year scoring limit"})
             profile = _get_state_repository().get_scoring_profile(user_id)
             if profile is None or not profile.active:
                 return _response(409, {"detail": "an active scoring profile is required"})
@@ -141,18 +147,24 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             profile = _get_state_repository().get_scoring_profile(user_id)
             if profile is None or not profile.active:
                 return _response(409, {"detail": "an active scoring profile is required"})
-            records = [
+            max_years = _get_state_repository().get_discovery_settings().max_required_years
+            run_records = [
                 record for record in _get_reader().list_records()
                 if record.first_discovered_run_id == request.run_id
             ]
-            if not records:
+            if not run_records:
                 return _response(404, {"detail": "run not found or contains no newly discovered jobs"})
+            records = [
+                record for record in run_records
+                if is_scoreable_by_years(record, max_years)
+            ]
+            seniority_skipped = len(run_records) - len(records)
             eligible = [record for record in records if record.eligibility_status is EligibilityStatus.ELIGIBLE]
             state_by_job = {
                 state.job_id: state for state in _get_state_repository().get_snapshot(user_id).jobs
             }
             candidates = []
-            for record in sorted(eligible, key=lambda item: item.created_at, reverse=True):
+            for record in sorted(eligible, key=lambda item: (scoring_priority(item), item.created_at)):
                 state = state_by_job.get(record.job_id)
                 if state and state.status in {DashboardJobUserStatus.APPLIED, DashboardJobUserStatus.REJECTED}:
                     continue
@@ -179,6 +191,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "eligible": len(eligible),
                 "remaining": len(candidates),
                 "queued": len(selected),
+                "seniority_skipped": seniority_skipped,
             })
         if route_key == "POST /actions/crawler":
             request = ManualCrawlerRequest.model_validate_json(event.get("body") or "{}")

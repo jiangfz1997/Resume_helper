@@ -9,6 +9,7 @@ from job_discovery.dashboard.models import DashboardJobUserStatus
 from job_discovery.domain.interfaces import CoarseScorer, JobRepository
 from job_discovery.domain.models import EligibilityStatus, JobQuery, JobRecord
 from job_discovery.domain.normalize import normalize_company
+from job_discovery.domain.scoring_policy import is_scoreable_by_years, scoring_priority
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def score_jobs_for_users(
     user_ids: set[str] | None = None,
     job_ids: set[UUID] | None = None,
     max_age_days: int | None = None,
+    max_required_years: int | None = None,
 ) -> tuple[int, int]:
     """max_age_days bounds the scheduled run to recently discovered jobs.
     Without it, editing a scoring profile invalidates every existing score and
@@ -39,7 +41,11 @@ def score_jobs_for_users(
     elif max_age_days is not None:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).timestamp()
         jobs = [job for job in jobs if _created_timestamp(job) >= cutoff]
-    jobs.sort(key=_created_timestamp, reverse=True)
+    jobs = [job for job in jobs if is_scoreable_by_years(job, max_required_years)]
+    # Spend the limited daily budget on new-grad/0-3/unstated roles first.
+    # Oldest-first within a tier lets yesterday's overflow clear before it
+    # ages out instead of being starved by every new crawl.
+    jobs.sort(key=lambda job: (scoring_priority(job), _created_timestamp(job)))
     profiles = [
         profile for profile in user_data.list_scoring_profiles()
         if profile.active and (user_ids is None or profile.user_id in user_ids)

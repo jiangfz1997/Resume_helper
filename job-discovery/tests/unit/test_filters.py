@@ -137,6 +137,14 @@ def test_posting_at_the_threshold_is_eligible() -> None:
     assert decision.status is EligibilityStatus.ELIGIBLE
 
 
+def test_range_above_the_threshold_is_excluded_by_its_upper_bound() -> None:
+    decision = apply_hard_filters(
+        _years_candidate("Backend Developer", "We need 3-5 years of experience."), YEARS_CONFIG
+    )
+    assert decision.status is EligibilityStatus.EXCLUDED
+    assert FilterCode.YEARS_TOO_HIGH in decision.codes
+
+
 def test_new_grad_tag_does_not_rescue_a_stated_bar() -> None:
     """A "Junior" title over a description demanding five years is a real
     pattern in the corpus. The parsed number wins -- otherwise the tag becomes
