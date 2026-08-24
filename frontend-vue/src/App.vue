@@ -73,9 +73,12 @@ const contentStyle = computed(() => {
   ) {
     return { padding: '0', maxWidth: '100%', margin: '0', overflow: 'hidden', height: 'calc(100vh - 56px)' }
   }
-  // Applications is a table, not prose: 960px wraps company and title onto
-  // two lines each. It still scrolls normally, so it does not belong in the
-  // full-bleed branch above, which zeroes the padding and pins the height.
+  if (route.path === '/analytics') {
+    return { padding: '0', maxWidth: '100%', margin: '0' }
+  }
+  // This table needs more horizontal room than the prose-like screens. It
+  // still scrolls normally, so it does not belong in the full-bleed branch
+  // above, which zeroes the padding and pins the height.
   if (route.path === '/applications') {
     return { padding: '24px 32px', maxWidth: '1440px', margin: '0 auto' }
   }
@@ -86,6 +89,7 @@ const showLogin = ref(false)
 const menuOptions: MenuOption[] = [
   { label: 'Jobs', key: '/jobs' },
   { label: 'Applications', key: '/applications' },
+  { label: 'Analytics', key: '/analytics' },
   { label: 'Job Settings', key: '/job-settings' },
   { label: 'Generate', key: '/generate' },
   { label: 'Profile', key: '/profile' },
@@ -97,7 +101,7 @@ const menuOptions: MenuOption[] = [
 const visibleMenuOptions = computed(() => {
   if (!auth.isAuthenticated) return menuOptions.slice(0, 1)
   return authMode === 'cognito'
-    ? menuOptions.filter((option) => ['/jobs', '/applications', '/job-settings', '/profile'].includes(String(option.key)))
+    ? menuOptions.filter((option) => ['/jobs', '/applications', '/analytics', '/job-settings', '/profile'].includes(String(option.key)))
     : menuOptions
 })
 
